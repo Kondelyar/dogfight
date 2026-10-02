@@ -1,21 +1,29 @@
-export function wrap(ship, width, height) {
-  let wrapped = false;
+import { Vector2 } from './vector.js';
 
-  if (ship.x < 0) {
-    ship.x += width;
+export function wrap(entity, width, height) {
+  let wrapped = false;
+  let { x, y } = entity.pos;
+
+  if (x < 0) {
+    x += width;
     wrapped = true;
   }
-  if (ship.x > width) {
-    ship.x -= width;
+  if (x > width) {
+    x -= width;
     wrapped = true;
   }
-  if (ship.y < 0) {
-    ship.y += height;
+  if (y < 0) {
+    y += height;
     wrapped = true;
   }
-  if (ship.y > height) {
-    ship.y -= height;
+  if (y > height) {
+    y -= height;
     wrapped = true;
+  }
+
+  if (wrapped) {
+    entity.pos = new Vector2(x, y);
+    entity.prevPos = entity.pos;
   }
 
   return wrapped;
