@@ -1,0 +1,14 @@
+{
+  "images": {
+    "sheet": { "url": "/assets/sprites.png" }
+  },
+  "sounds": {
+    "shoot": { "url": "/assets/sounds/shoot.wav", "optional": true },
+    "hit": { "url": "/assets/sounds/hit.wav", "optional": true },
+    "explosion": { "url": "/assets/sounds/explosion.wav", "optional": true }
+  },
+  "json": {
+    "frames": { "url": "/assets/frames.json" },
+    "arena": { "url": "/assets/arena.json" }
+  }
+}

@@ -9,77 +9,48 @@ function lerpAngle(a, b, t) {
   return a + diff * t;
 }
 
-export function drawShip(ctx, ship, alpha) {
+const SHIP_SIZE = 30;
+
+export function drawShip(ctx, ship, alpha, sprites) {
   const x = lerp(ship.prevPos.x, ship.pos.x, alpha);
   const y = lerp(ship.prevPos.y, ship.pos.y, alpha);
   const angle = lerpAngle(ship.prevAngle, ship.angle, alpha);
 
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.rotate(angle);
-
-  ctx.strokeStyle = '#8fd3ff';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(14, 0);
-  ctx.lineTo(-10, 8);
-  ctx.lineTo(-6, 0);
-  ctx.lineTo(-10, -8);
-  ctx.closePath();
-  ctx.stroke();
-
   if (ship.thrusting) {
-    ctx.strokeStyle = '#ff9d4d';
-    ctx.beginPath();
-    ctx.moveTo(-6, 0);
-    ctx.lineTo(-16 - Math.random() * 6, 0);
-    ctx.stroke();
+    ctx.globalAlpha = 0.6 + Math.random() * 0.4;
+    sprites.draw(ctx, 'flame', x, y, { angle, size: SHIP_SIZE });
+    ctx.globalAlpha = 1;
   }
-
-  ctx.restore();
+  sprites.draw(ctx, 'ship', x, y, { angle, size: SHIP_SIZE });
 }
 
-export function drawBullet(ctx, bullet, alpha) {
+export function drawBullet(ctx, bullet, alpha, sprites) {
   const x = lerp(bullet.prevPos.x, bullet.pos.x, alpha);
   const y = lerp(bullet.prevPos.y, bullet.pos.y, alpha);
-
-  ctx.fillStyle = '#ffe066';
-  ctx.beginPath();
-  ctx.arc(x, y, bullet.radius, 0, Math.PI * 2);
-  ctx.fill();
+  sprites.draw(ctx, 'bullet', x, y, { size: 14 });
 }
 
-export function drawAsteroid(ctx, asteroid, alpha) {
+export function drawAsteroid(ctx, asteroid, alpha, sprites) {
   const x = lerp(asteroid.prevPos.x, asteroid.pos.x, alpha);
   const y = lerp(asteroid.prevPos.y, asteroid.pos.y, alpha);
   const angle = lerpAngle(asteroid.prevAngle, asteroid.angle, alpha);
-
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.rotate(angle);
-  ctx.strokeStyle = asteroid.homing ? '#ff6b6b' : '#9aa5b1';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.arc(0, 0, asteroid.radius, 0, Math.PI * 2);
-  ctx.moveTo(0, 0);
-  ctx.lineTo(asteroid.radius, 0);
-  ctx.stroke();
-  ctx.restore();
+  const name = asteroid.homing ? 'hunter' : 'asteroid';
+  sprites.draw(ctx, name, x, y, { angle, size: asteroid.radius * 2.2 });
 }
 
 export function drawExplosion(ctx, explosion) {
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, explosion.ttl / 0.6);
   ctx.fillStyle = '#ff9d4d';
   for (const p of explosion.particles) {
-    ctx.fillRect(explosion.pos.x + p.offset.x, explosion.pos.y + p.offset.y, 2, 2);
+    ctx.fillRect(explosion.pos.x + p.offset.x, explosion.pos.y + p.offset.y, 3, 3);
   }
+  ctx.restore();
 }
 
-export function drawPickup(ctx, pickup) {
-  ctx.strokeStyle = pickup.effect === 'shield' ? '#4dff88' : '#4dd2ff';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.arc(pickup.pos.x, pickup.pos.y, pickup.radius, 0, Math.PI * 2);
-  ctx.stroke();
+export function drawPickup(ctx, pickup, sprites) {
+  const name = pickup.effect === 'shield' ? 'shield' : 'rapid';
+  sprites.draw(ctx, name, pickup.pos.x, pickup.pos.y, { size: pickup.radius * 2.4 });
 }
 
 export function drawStarfield(ctx, width, height, stars) {
@@ -92,7 +63,7 @@ export function drawStarfield(ctx, width, height, stars) {
   }
 }
 
-export function drawHud(ctx, stats, ship) {
+export function drawHud(ctx, stats, ship, info) {
   ctx.fillStyle = '#8fd3ff';
   ctx.font = '14px monospace';
   ctx.fillText(`steps/s ${stats.stepsPerSecond}`, 12, 20);
@@ -100,4 +71,5 @@ export function drawHud(ctx, stats, ship) {
   ctx.fillText(`frame ${stats.frameMs.toFixed(2)} ms`, 12, 56);
   ctx.fillText(`hp ${ship.hp}`, 12, 80);
   ctx.fillText(`score ${ship.score}`, 12, 98);
+  ctx.fillText(`${info.name} @ ${info.room}`, 12, 122);
 }

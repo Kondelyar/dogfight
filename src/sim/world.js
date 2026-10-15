@@ -1,4 +1,4 @@
-export class World {
+export class World extends EventTarget {
   #entities = new Map();
   #toDespawn = new Set();
 
@@ -25,6 +25,12 @@ export class World {
 
   *ofKind(kind) {
     for (const e of this) if (e.kind === kind) yield e;
+  }
+
+  // шина подій: сим кидає "fired" / "hit" / "exploded" / "scored",
+  // а звук і HUD на них підписані й про сим нічого не знають
+  emit(type, detail) {
+    this.dispatchEvent(new CustomEvent(type, { detail }));
   }
 
   step(dt, ctx) {

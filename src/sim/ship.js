@@ -19,6 +19,7 @@ export class Ship extends Entity {
     this.prevAngle = this.angle;
     this.thrusting = false;
     this.score = 0;
+    this.rapidFireUntil = 0;
   }
 
   get hp() {
@@ -57,22 +58,18 @@ export class Ship extends Entity {
   }
 
   // поле-стрілка, не метод на прототипі: this всередині завжди ship,
-  // навіть якщо fire передати кудись окремо від самого ship
-  // (причина і довша відповідь - README, розділ this-bug)
+  // навіть якщо fire передати кудись окремо від самого ship (README, Lab 2)
   fire = (world) => {
     if (this.#fireTimer > 0 || !this.alive) return null;
-    
-    // Перевіряємо, чи діє зараз бонус синьої кульки
-    const hasRapidFire = this.rapidFireUntil && performance.now() < this.rapidFireUntil;
-    
-    // Якщо бонус активний - затримка стає 0.05с (в 5 разів швидше!), інакше стандартні 0.25с
-    this.#fireTimer = hasRapidFire ? 0.05 : FIRE_COOLDOWN;
+    const rapid = this.rapidFireUntil > performance.now();
+    this.#fireTimer = rapid ? FIRE_COOLDOWN / 2 : FIRE_COOLDOWN;
 
     const nose = this.pos.add(Vector2.fromAngle(this.angle, this.radius));
     const bulletVel = this.vel.add(Vector2.fromAngle(this.angle, 480));
     const bullet = new Bullet(nose.x, nose.y, bulletVel, this.angle);
     bullet.owner = this;
     world.spawn(bullet);
+    world.emit('fired', { ship: this });
     return bullet;
   };
 }

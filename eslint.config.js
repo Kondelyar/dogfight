@@ -1,6 +1,7 @@
 import js from '@eslint/js';
 
 export default [
+  { ignores: ['dist'] },
   js.configs.recommended,
   {
     languageOptions: {
@@ -9,11 +10,24 @@ export default [
       globals: {
         window: 'readonly',
         document: 'readonly',
-        requestAnimationFrame: 'readonly',
-        cancelAnimationFrame: 'readonly',
+        console: 'readonly',
         performance: 'readonly',
         devicePixelRatio: 'readonly',
-        console: 'readonly',
+        requestAnimationFrame: 'readonly',
+        cancelAnimationFrame: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+        setInterval: 'readonly',
+        clearInterval: 'readonly',
+        fetch: 'readonly',
+        URL: 'readonly',
+        URLSearchParams: 'readonly',
+        Image: 'readonly',
+        AudioContext: 'readonly',
+        AbortController: 'readonly',
+        AbortSignal: 'readonly',
+        EventTarget: 'readonly',
+        CustomEvent: 'readonly',
       },
     },
     rules: {

@@ -2,8 +2,6 @@
 
 Корабель на canvas, керований фіксованим таймстепом, рендер інтерпольований під частоту монітора.
 
-Lab 1–2 курсу "JavaScript — Build a Multiplayer Game".
-
 ## Запуск
 
 ```
@@ -14,30 +12,6 @@ npm run dev
 Відкрити посилання з консолі (http://localhost:5173).
 
 Керування: стрілки або WASD, вгору/W — тяга, пробіл або кнопка FIRE — постріл.
-
-## Структура
-
-```
-src/
-  main.js          зв'язує все, стартує цикл, правила зіткнень
-  loop.js          createLoop — rAF + accumulator, лічильники steps/s, frames/s
-  input.js         createInput — клавіатура через замикання (isDown, justPressed)
-  sim/
-    vector.js       Vector2 — чисті методи, нічого не мутують
-    entity.js       базовий Entity, приватний #id, update(dt)
-    ship.js         Ship extends Entity — керування, #hp, fire()
-    bullet.js       Bullet extends Entity — час життя (ttl)
-    asteroid.js     Asteroid extends Entity — дрейф, відбиття від країв
-    explosion.js    Explosion extends Entity — частинки, що гаснуть
-    pickup.js       pickup як композиція: Entity + прикріплена apply()
-    homing.js       withHoming — обгортає update будь-якої сутності
-    world.js        World — Map<id, Entity>, ofKind, deferred despawn
-    collision.js     findCollisions — лише виявлення пар (circle-circle)
-    arena.js         wrap-around по краях екрана
-  render/
-    canvas.js       DPR-aware canvas, ресайз
-    draw.js         малювання всіх видів сутностей + HUD
-```
 
 ## Lab 1 — M1–M3
 
@@ -127,3 +101,109 @@ fire = (world) => {
 **Pickup.** Pickup не літає, не стріляє і не має `#hp` — йому не потрібна жодна з особливостей `Ship`. Робити `Pickup extends Entity` заради одного поля було б чесно, але простіше: беру звичайний `Entity` (в нього і так `vel = 0` за замовчуванням, тобто він вже "стоїть на місці" і бере участь у колізіях через `radius`) і навішую `effect` і `apply(ship)` прямо на інстанс. Це рівно те, про що Section 3 лаби каже "behavior as data" — ефект — це просто рядок ('shield' / 'rapidfire'), яким `handlePair` у `main.js` і керується.
 
 Якби я пішов шляхом `class Pickup extends Entity` і `class HomingBullet extends Bullet`, дерево почало б розповзатись при кожній новій комбінації (homing-pickup? бронебійна куля, яка ще й наводиться?) — кожна нова комбінація потребувала б нового класу. Композицією ці речі просто комбінуються в рантаймі.
+
+## Lab 3 — Асинхронний JS: завантаження, звук, лобі
+
+### M1 — завантаження
+
+- `fetchOk` перевіряє `res.ok` (fetch не reject-ить 404) і зливає таймаут `AbortSignal.timeout` із зовнішнім signal через `AbortSignal.any`.
+- `withRetry`: експоненційний backoff з jitter. Повторює тільки мережеву помилку, таймаут і 5xx. 4xx, abort і битий JSON повтором не лікуються.
+- `loadAll`: кожен запис вантажиться паралельно, до кожного промісу додано `.then`, що рахує прогрес, потім `Promise.all`. Якщо падає критичний файл, решту скасовую сам (`Promise.all` сусідів не зупиняє). Файл з `optional: true` при помилці потрапляє в `failed`, гра стартує без нього.
+- Гра стартує лише після `await loadAll(...)`. Далі лобі, потім гра.
+
+Послідовно vs паралельно (`?test=slow` додає штучну затримку, час друкується в консоль: `[assets] loaded in ... ms`):
+
+- `Promise.all` (паралельно): 3068  мс
+- послідовні `await` у гілці: 10614 мс
+
+Для порівняння в гілці замінити в `loadAll` рядок `Promise.all(jobs)` на цикл, де кожен запис вантажиться тільки після попереднього.
+
+### M2 — спрайти і звук
+
+Сим (`src/sim`) не імпортує ні `audio.js`, ні `hud.js`. `World extends EventTarget` і кидає події `fired`, `hit`, `exploded`, `scored`; `audio.attach(world)` і `createHud(world)` на них підписуються. AudioContext стартує після першого кліку чи натискання клавіші, буфери декодуються ще на екрані завантаження. У консолі до першого жесту може бути попередження Chrome про AudioContext, це очікувано.
+
+Дрібне виправлення з Lab 2: pickup `rapidfire` раніше нічого не робив, тепер `Ship.fire` скорочує перезарядку вдвічі.
+
+### M3 — лобі по HTTP
+
+`Lobby extends EventTarget`: `start()`, `stop()`, `refresh()`, `join(roomId, name)`; події `roomsChanged`, `refreshFailed`, `joined`. Оновлення списку кожні 5 с, кожен запит з таймаутом 4 с. Новий `refresh()` скасовує попередній запит, а `stop()` (при виході з лобі) гасить таймер і скасовує запит, що ще летить. DOM окремо в `lobbyView.js`. Вибрана кімната передає свій `arena` у гру і перекриває `arena.json`.
+
+### M4 — головоломки порядку
+
+Виводи 1, 2, 4, 5 перевірені в Node 22, головоломка 3 призначена для браузера.
+
+**1. await і таймер**
+
+```js
+console.log('A');
+(async () => {
+  console.log('B');
+  await Promise.resolve();
+  console.log('C');
+})();
+setTimeout(() => console.log('D'), 0);
+console.log('E');
+```
+
+Вивід: `A B E C D`. До `await` async-функція виконується синхронно (B). Продовження C це мікрозадача, вона йде перед таймером D.
+
+**2. setTimeout всередині then**
+
+```js
+setTimeout(() => console.log('timeout 1'), 0);
+Promise.resolve()
+  .then(() => {
+    console.log('then 1');
+    setTimeout(() => console.log('timeout 2'), 0);
+  })
+  .then(() => console.log('then 2'));
+```
+
+Вивід: `then 1`, `then 2`, `timeout 1`, `timeout 2`. Обидва `then` це мікрозадачі і біжать до першої задачі. Таймер, поставлений зсередини then, стає в чергу задач після timeout 1.
+
+**3. requestAnimationFrame і мікрозадачі**
+
+```js
+requestAnimationFrame(() => {
+  console.log('raf1');
+  Promise.resolve().then(() => console.log('micro1'));
+});
+requestAnimationFrame(() => console.log('raf2'));
+```
+
+Вивід: `raf1`, `micro1`, `raf2`. Після кожного rAF-колбека браузер спустошує мікрочергу, тому micro1 встигає до raf2.
+
+**4. async return проти звичайного return**
+
+```js
+async function f() { return 1; }
+async function g() { return Promise.resolve(1); }
+g().then(() => console.log('g'));
+f().then(() => console.log('f'));
+Promise.resolve().then(() => console.log('p1')).then(() => console.log('p2')).then(() => console.log('p3'));
+```
+
+Вивід: `f p1 p2 g p3`. `f` повертає звичайне значення і його then стає в чергу одразу. `g` повертає проміс, і async-функція витрачає додаткові мікрозадачі на його розгортання, тому `g` з'являється на два кроки пізніше.
+
+**5. catch, finally і queueMicrotask**
+
+```js
+Promise.reject(new Error('x'))
+  .catch(() => console.log('caught'))
+  .finally(() => console.log('finally'));
+queueMicrotask(() => console.log('qm'));
+console.log('sync');
+```
+
+Вивід: `sync caught qm finally`. `catch` вже стояв у черзі, коли додали `qm`. `finally` стає в чергу тільки після того, як відпрацює `catch`, тобто після `qm`.
+
+### M4 — галерея помилок
+
+Кожен випадок відтворюється адресою з параметром, вставити скріншот або лог:
+
+| Сценарій | Як відтворити | Що має бути | Скріншот |
+|---|---|---|---|
+| 404 спрайт | `/?test=404` | гра стартує, у лобі примітка про `images/nebula`, у консолі warning | ![alt text](image.png) |
+| таймаут мережі | `/?test=timeout` | три спроби з backoff, на екрані червоний текст і кнопка "Повторити" | ![alt text](image-1.png) |
+| abort посеред завантаження | `/?test=slow`, натиснути Esc | "Завантаження скасовано" і кнопка "Повторити", запити скасовані | ![alt text](image-2.png) |
+| биттий JSON | `/?test=badjson` | `SyntaxError` без повторів, гра стартує, у лобі примітка про `json/broken` | ![alt text](image-3.png) |

@@ -1,0 +1,60 @@
+function el(tag, text) {
+  const node = document.createElement(tag);
+  if (text) node.textContent = text;
+  return node;
+}
+
+export function mountLobbyView(root, lobby) {
+  const nameInput = el('input');
+  nameInput.value = 'Pilot';
+  nameInput.maxLength = 16;
+
+  const nameLabel = el('label', "Ім'я пілота ");
+  nameLabel.append(nameInput);
+
+  const list = el('ul');
+  const status = el('p');
+  const notice = el('p');
+
+  const panel = el('div');
+  panel.className = 'panel';
+  panel.append(el('h1', 'dogfight'), nameLabel, list, status, notice);
+  root.replaceChildren(panel);
+
+  let lastKey = '';
+
+  function render(rooms) {
+    const key = JSON.stringify(rooms);
+    if (key === lastKey) return;
+    lastKey = key;
+
+    list.replaceChildren(
+      ...rooms.map((room) => {
+        const button = el('button', 'Join');
+        button.disabled = room.players >= room.max;
+        button.addEventListener('click', () => {
+          lobby.join(room.id, nameInput.value.trim() || 'Pilot');
+        });
+
+        const li = el('li');
+        li.append(el('span', `${room.name} — ${room.players}/${room.max} `), button);
+        return li;
+      }),
+    );
+  }
+
+  lobby.addEventListener('roomsChanged', (e) => {
+    status.textContent = '';
+    render(e.detail);
+  });
+
+  lobby.addEventListener('refreshFailed', () => {
+    status.textContent = 'Не вдалося оновити список кімнат, пробую ще раз...';
+  });
+
+  return {
+    setNotice(text) {
+      notice.textContent = text;
+    },
+  };
+}

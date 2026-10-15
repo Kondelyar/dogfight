@@ -1,0 +1,6 @@
+{
+  "asteroids": 5,
+  "hunters": 1,
+  "pickupEveryMs": 8000,
+  "respawnSeconds": 2
+}

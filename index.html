@@ -11,9 +11,52 @@
         height: 100%;
         background: #05070d;
         overflow: hidden;
+        color: #8fd3ff;
+        font-family: monospace;
       }
       canvas {
         display: block;
+      }
+      #overlay {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      #overlay[hidden] {
+        display: none;
+      }
+      .panel {
+        min-width: 320px;
+        padding: 20px 28px;
+        border: 2px solid #8fd3ff;
+        background: rgba(5, 7, 13, 0.85);
+      }
+      .panel ul {
+        padding: 0;
+        list-style: none;
+      }
+      .panel li {
+        margin: 8px 0;
+      }
+      button {
+        border: 2px solid #8fd3ff;
+        background: rgba(143, 211, 255, 0.15);
+        color: #8fd3ff;
+        font: 13px monospace;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
+      #retry {
+        position: fixed;
+        left: 50%;
+        top: calc(50% + 70px);
+        transform: translateX(-50%);
+        padding: 8px 18px;
       }
       #fire {
         position: fixed;
@@ -22,16 +65,17 @@
         width: 72px;
         height: 72px;
         border-radius: 50%;
-        border: 2px solid #8fd3ff;
-        background: rgba(143, 211, 255, 0.15);
-        color: #8fd3ff;
-        font: 13px monospace;
+      }
+      [hidden] {
+        display: none;
       }
     </style>
   </head>
   <body>
     <canvas id="game"></canvas>
-    <button id="fire">FIRE</button>
+    <div id="overlay" hidden></div>
+    <button id="retry" hidden>Повторити</button>
+    <button id="fire" hidden>FIRE</button>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
