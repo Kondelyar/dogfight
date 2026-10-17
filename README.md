@@ -207,3 +207,82 @@ console.log('sync');
 | таймаут мережі | `/?test=timeout` | три спроби з backoff, на екрані червоний текст і кнопка "Повторити" | ![alt text](image-1.png) |
 | abort посеред завантаження | `/?test=slow`, натиснути Esc | "Завантаження скасовано" і кнопка "Повторити", запити скасовані | ![alt text](image-2.png) |
 | биттий JSON | `/?test=badjson` | `SyntaxError` без повторів, гра стартує, у лобі примітка про `json/broken` | ![alt text](image-3.png) |
+
+## Lab 4 — Node.js: сервер, кімнати, WebSocket, стріми
+
+### Запуск
+
+```
+npm install
+npm run dev:server     # термінал 1: сервер на :3000 (опційно server/.env, див. .env.example)
+npm run dev:client     # термінал 2: Vite на :5173, відкривати його
+```
+
+Продакшн-режим: `npm run build`, потім `npm start`, і все (клієнт, API, WebSocket) на `http://localhost:3000`.
+Тести: `npm test`.
+
+### M1 — HTTP-сервер
+
+`node:http` без фреймворків. Маршрути: `GET /health`, `GET /api/rooms`, `POST /api/rooms` (тіло до 1 КБ, назва 1–32 символи; 400, 413, 429), `GET /api/replays/:id`, решта віддається зі `client/dist`. Статика: правильні MIME, після `path.join` шлях мусить лишатись усередині `dist` (інакше 403), id реплею перевіряється регуляркою `[\w-]+`. Конфіг лише з `process.env` через `config.js` (неправильне значення зупиняє старт з поясненням). Зупинка по SIGINT/SIGTERM: перестаємо приймати з'єднання, закриваємо сокети кодом 1001, дописуємо логи, `exit 0`.
+
+### M2 — кімнати і WebSocket
+
+Протокол v1, повідомлення JSON з полями `v` і `type`:
+
+| Напрямок | Повідомлення |
+|---|---|
+| клієнт -> сервер | `join {room, name}` (перше, протягом 5 с), `chat {text}` |
+| сервер -> клієнт | `roster {players}`, `chat {from, text}` |
+
+Кожне повідомлення проходить `validate` у `protocol.js`. Коди закриття: 4000 погане повідомлення, 4001 немає join за 5 с, 4002 кімната заповнена, 4003 rate limit, 4004 повільний клієнт, 4005 немає такої кімнати, 1009 завеликий payload (від `ws`).
+
+`Room extends EventEmitter` (`join`, `leave`, `chat`, `empty`, а також `event` для логу). `RoomManager` видаляє кімнату, коли вона порожніє, а кімнату, в яку ніхто не зайшов, через 60 с. Heartbeat: ping кожні 15 с, хто не відповів на два, того `terminate`. На кожному сокеті є `error`-слухач. Клієнт при кожному (пере)підключенні надсилає `join` сам, бо сервер про нього нічого не пам'ятає. Повідомлення, надіслані до відкриття сокета, чекають у черзі й надсилаються після `join`. Backoff 0.5 с, 1 с, 2 с ... до 10 с з jitter, після кодів 4000/4002/4005 клієнт не перепідключається.
+
+### M3 — лог матчу як стрім
+
+Кожна кімната пише події в `server/logs/<room>-<timestamp>.ndjson`: `Readable.from(events.on(room, 'event'))` -> `Transform` (writable у object mode) -> `createWriteStream` через `pipeline`. Кімната видалена -> `AbortController` завершує потік -> файл дописується. `replay.js` читає файл шматками й віддає розібрані події. `GET /api/replays/:id` віддає файл через `pipeline(createReadStream(file), res)`, без буферизації в пам'яті. Id це ім'я файлу без `.ndjson`.
+
+Дослід з backpressure:
+
+```
+cd server
+node scripts/make-big-log.js logs/big-200mb.ndjson 200      # синтетичний лог 200 МБ
+npm start                                                    # в іншому терміналі
+node scripts/sample-rss.js http://localhost:3000/health 60 > rss.csv
+```
+
+Паралельно в браузері: DevTools -> Network -> throttling (Slow 4G або свій профіль), відкрити `http://localhost:3000/api/replays/big-200mb`. (Без DevTools: `curl --limit-rate 1M -o /dev/null http://localhost:3000/api/replays/big-200mb`.)
+
+Графік rss з `rss.csv`: ![alt text](image-4.png)
+Графік доводить, що механізм backpressure працює коректно: незважаючи на те, що сервер віддавав файл розміром 200 МБ через дуже повільний канал зв'язку (3G), споживання оперативної пам'яті (RSS) залишалося стабільним на рівні 53–56 МБ і не переповнювалося.
+
+### M4 — ліміти і event loop
+
+Ліміти: token bucket на повідомлення (10 за секунду, сплеск 20, потім закриття 4003), `maxPayload` 4 КБ, 8 гравців у кімнаті, 20 кімнат на сервері, тіло POST до 1 КБ. Політика повільного клієнта: якщо `socket.bufferedAmount` більший за 64 КБ, некритичні повідомлення (chat) для нього відкидаються, а roster (критичне) іде далі; якщо більше за 256 КБ, з'єднання закривається кодом 4004. Усе налаштовується змінними середовища (`config.js`).
+
+**Event loop у Node.** Фази libuv: timers, pending callbacks, poll (I/O), check (`setImmediate`), close callbacks; між кожною фазою спорожнюються `process.nextTick` і потім мікрозадачі промісів. JS-код виконується в одному потоці: libuv читає файли в пулі потоків, але мій обробник запиту нікому не можна перервати.
+
+Демонстрація блокування (сервер запущений з `DEBUG_ROUTES=1`): маршрут `/api/slow` робить busy-loop на 300 мс. Поки він виконується, `/health` і повідомлення чату чекають, бо event loop не може дійти до їхніх колбеків:
+
+- `/health` без навантаження: 5 мс
+- `/health` під час `/api/slow`: 305 мс 
+
+Для повторення: `DEBUG_ROUTES=1 npm run dev:server`, у циклі смикати `curl localhost:3000/api/slow`, і паралельно вимірювати `curl -w "%{time_total}\n" -o /dev/null -s localhost:3000/health`, а ще писати в чат у двох вікнах.
+
+**Backpressure.** `write()` повертає `false`, коли внутрішній буфер Writable вище `highWaterMark`. Якщо продовжувати писати, буфер росте без обмежень і пам'ять закінчується. `pipeline` ставить читання на паузу до події `drain` і сам прибирає потоки при помилці чи обриві клієнта. У M3 це саме відповідь сервера повільному клієнтові, і через це rss плоский. Те саме для WebSocket: `bufferedAmount` це індикатор того, що клієнт читає повільніше, ніж ми пишемо.
+
+**Чому неперехоплена помилка валить усе.** `emit('error')` без слухача кидає виняток, а відхилений проміс без `.catch` у Node за замовчуванням теж завершує процес (код 1). Один необроблений випадок означає, що відключаються всі гравці. Тому на кожному сокеті є `error`-слухач, а в `app.js` кожен обробник запиту обгорнутий у `try/catch`.
+
+Демонстрація (`DEBUG_ROUTES=1`): `GET /api/crash?mode=emitter` і `GET /api/crash?mode=promise` валять процес, ті самі запити з `&fixed=1` додають слухач чи `.catch`, і сервер живий.
+
+Уривок логу після `?mode=emitter`: 
+node:events:487
+      throw er; // Unhandled 'error' event
+      ^
+Error: boom (emitter)
+    at Immediate.<anonymous>
+    at process.processImmediate (node:internal/timers:504:21)
+Emitted 'error' event at:
+    at Immediate.<anonymous>
+
+Те саме з `fixed=1`: handled: boom (emitter)

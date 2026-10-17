@@ -23,13 +23,18 @@ export function sleep(ms, signal) {
 
 // fetch не reject-иться на 404, тому перевіряємо ok самі.
 // Таймаут і зовнішній signal зливаємо в один.
-export async function fetchOk(url, { signal, timeoutMs = 8000, accept } = {}) {
+export async function fetchOk(
+  url,
+  { signal, timeoutMs = 8000, accept, method, body, headers } = {},
+) {
   const signals = [AbortSignal.timeout(timeoutMs)];
   if (signal) signals.push(signal);
 
   const res = await fetch(url, {
+    method,
+    body,
     signal: AbortSignal.any(signals),
-    headers: accept ? { Accept: accept } : undefined,
+    headers: { ...headers, ...(accept && { Accept: accept }) },
   });
   if (!res.ok) throw new HttpError(res.status, url);
   return res;

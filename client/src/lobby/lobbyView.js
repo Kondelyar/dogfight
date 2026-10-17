@@ -13,12 +13,26 @@ export function mountLobbyView(root, lobby) {
   nameLabel.append(nameInput);
 
   const list = el('ul');
+
+  const roomInput = el('input');
+  roomInput.placeholder = 'Назва нової кімнати';
+  roomInput.maxLength = 32;
+  const createButton = el('button', 'Створити');
+  createButton.addEventListener('click', () => {
+    const name = roomInput.value.trim();
+    if (!name) return;
+    roomInput.value = '';
+    lobby.create(name);
+  });
+  const createRow = el('div');
+  createRow.append(roomInput, createButton);
+
   const status = el('p');
   const notice = el('p');
 
   const panel = el('div');
   panel.className = 'panel';
-  panel.append(el('h1', 'dogfight'), nameLabel, list, status, notice);
+  panel.append(el('h1', 'dogfight'), nameLabel, list, createRow, status, notice);
   root.replaceChildren(panel);
 
   let lastKey = '';
@@ -27,6 +41,11 @@ export function mountLobbyView(root, lobby) {
     const key = JSON.stringify(rooms);
     if (key === lastKey) return;
     lastKey = key;
+
+    if (rooms.length === 0) {
+      list.replaceChildren(el('li', 'Кімнат ще немає, створи першу.'));
+      return;
+    }
 
     list.replaceChildren(
       ...rooms.map((room) => {
@@ -50,6 +69,11 @@ export function mountLobbyView(root, lobby) {
 
   lobby.addEventListener('refreshFailed', () => {
     status.textContent = 'Не вдалося оновити список кімнат, пробую ще раз...';
+  });
+
+  lobby.addEventListener('createFailed', (e) => {
+    status.textContent =
+      e.detail.status === 429 ? 'Забагато кімнат на сервері' : 'Не вдалося створити кімнату';
   });
 
   return {

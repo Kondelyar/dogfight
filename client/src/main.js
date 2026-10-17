@@ -4,6 +4,8 @@ import { createAudio } from './audio.js';
 import { createHud } from './hud.js';
 import { fetchJson, withRetry, loadAll } from './assets/loader.js';
 import { applyTestMode } from './assets/testMode.js';
+import { Connection } from './net/connection.js';
+import { mountChat } from './net/chatView.js';
 import { Lobby } from './lobby/lobby.js';
 import { mountLobbyView } from './lobby/lobbyView.js';
 import { setupCanvas } from './render/canvas.js';
@@ -35,6 +37,7 @@ const audio = createAudio();
 const overlay = document.getElementById('overlay');
 const retryButton = document.getElementById('retry');
 const fireButton = document.getElementById('fire');
+const chatRoot = document.getElementById('chat');
 const testMode = new URLSearchParams(window.location.search).get('test');
 
 const stars = Array.from({ length: 140 }, () => ({
@@ -121,9 +124,20 @@ function showLobby(assets, failed) {
   lobby.start();
 }
 
+function wsUrl() {
+  const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  return `${scheme}://${window.location.host}/ws`;
+}
+
 function startGame(assets, room, name) {
   const arena = { ...assets.json.arena, ...room.arena };
   const sprites = createSprites(assets.images.sheet, assets.json.frames);
+
+  // join шлемо при кожному (пере)підключенні: сервер про нас нічого не пам'ятає
+  const connection = new Connection(wsUrl());
+  mountChat(chatRoot, connection);
+  connection.addEventListener('open', () => connection.send({ type: 'join', room: room.id, name }));
+  connection.connect();
 
   const world = new World();
   audio.attach(world);

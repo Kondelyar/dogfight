@@ -8,7 +8,7 @@ export class Lobby extends EventTarget {
   #controller = null;
   #rooms = [];
 
-  constructor({ url = '/api/rooms.json', intervalMs = 5000, timeoutMs = 4000 } = {}) {
+  constructor({ url = '/api/rooms', intervalMs = 5000, timeoutMs = 4000 } = {}) {
     super();
     this.#url = url;
     this.#intervalMs = intervalMs;
@@ -51,6 +51,21 @@ export class Lobby extends EventTarget {
     } catch (err) {
       if (controller.signal.aborted) return;
       this.#emit('refreshFailed', err);
+    }
+  }
+
+  // POST не повторюємо автоматично: він не ідемпотентний
+  async create(name) {
+    try {
+      await fetchJson(this.#url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+        timeoutMs: this.#timeoutMs,
+      });
+      await this.refresh();
+    } catch (err) {
+      this.#emit('createFailed', err);
     }
   }
 
