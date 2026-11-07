@@ -1,5 +1,6 @@
 import http from 'node:http';
 import path from 'node:path';
+import { randomInt } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
@@ -7,6 +8,7 @@ import { pipeline } from 'node:stream/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { CloseCode } from './protocol.js';
 import { RoomManager } from './rooms.js';
+import { Match } from './match.js';
 import { attachWebSocket } from './ws.js';
 import { serveStatic } from './static.js';
 import { startMatchLog } from './log/matchlog.js';
@@ -63,6 +65,7 @@ export function createApp(config) {
   });
 
   const logs = new Map();
+  const matches = new Map();
   const flushing = new Set();
 
   rooms.on('created', (room) => {
@@ -72,10 +75,14 @@ export function createApp(config) {
     log.done
       .catch((err) => console.error(`[matchlog] ${room.id}: ${err.message}`))
       .finally(() => flushing.delete(log.done));
+
+    matches.set(room.id, new Match(room, { seed: config.seed ?? randomInt(2 ** 32) }));
   });
   rooms.on('deleted', (room) => {
     logs.get(room.id)?.stop();
     logs.delete(room.id);
+    matches.get(room.id)?.stop();
+    matches.delete(room.id);
   });
 
   async function createRoom(req, res) {
@@ -138,6 +145,11 @@ export function createApp(config) {
       });
     }
 
+    // тривалість тіка, jitter інтервалу і кількість перевищень по кожній активній кімнаті
+    if (pathname === '/api/stats' && req.method === 'GET') {
+      return sendJson(res, 200, { rooms: [...matches.values()].map((m) => m.stats()) });
+    }
+
     if (pathname === '/api/rooms') {
       if (req.method === 'GET') return sendJson(res, 200, { rooms: rooms.list() });
       if (req.method === 'POST') return createRoom(req, res);
@@ -185,7 +197,7 @@ export function createApp(config) {
       for (const socket of wss.clients) socket.close(CloseCode.SHUTDOWN, 'server shutting down');
       wss.close();
 
-      rooms.closeAll(); // зупиняє логи матчів
+      rooms.closeAll(); // зупиняє матчі й логи
       await Promise.allSettled([...flushing]); // дописуємо логи на диск
       await Promise.race([closed, sleep(3000)]);
     })();

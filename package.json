@@ -1,18 +1,19 @@
 {
   "name": "dogfight",
   "private": true,
-  "version": "0.4.0",
+  "version": "0.5.0",
   "type": "module",
   "workspaces": [
     "client",
-    "server"
+    "server",
+    "shared"
   ],
   "scripts": {
     "dev:server": "npm run dev -w server",
     "dev:client": "npm run dev -w client",
     "build": "npm run build -w client",
     "start": "npm run start -w server",
-    "test": "npm test -w server",
+    "test": "npm test --workspaces --if-present",
     "lint": "eslint .",
     "format": "prettier --write ."
   },

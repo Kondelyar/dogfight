@@ -1,10 +1,9 @@
 import { Vector2 } from './vector.js';
 
+// id видає World (а не лічильник у класі): так він детермінований для матчу й влазить у Uint16
 export class Entity {
-  static #nextId = 1;
-  #id = Entity.#nextId++;
-
   constructor({ x = 0, y = 0, radius = 10, kind = 'entity' } = {}) {
+    this.id = 0;
     this.pos = new Vector2(x, y);
     this.prevPos = this.pos;
     this.vel = new Vector2();
@@ -15,11 +14,6 @@ export class Entity {
     this.alive = true;
   }
 
-  get id() {
-    return this.#id;
-  }
-
-  // базовий update годиться й для нерухомих речей (pickup): vel = 0
   update(dt) {
     this.prevPos = this.pos;
     this.pos = this.pos.add(this.vel.scale(dt));

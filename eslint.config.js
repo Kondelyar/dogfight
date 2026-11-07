@@ -22,12 +22,14 @@ const browser = {
   EventTarget: 'readonly',
   CustomEvent: 'readonly',
   WebSocket: 'readonly',
+  TextEncoder: 'readonly',
 };
 
 const node = {
   process: 'readonly',
   Buffer: 'readonly',
   console: 'readonly',
+  performance: 'readonly',
   setTimeout: 'readonly',
   clearTimeout: 'readonly',
   setInterval: 'readonly',
@@ -36,6 +38,18 @@ const node = {
   URL: 'readonly',
   fetch: 'readonly',
   AbortController: 'readonly',
+  TextEncoder: 'readonly',
+  EventTarget: 'readonly',
+  CustomEvent: 'readonly',
+};
+
+// shared працює і в браузері, і в Node, тому тут лише те, що є в обох
+const shared = {
+  console: 'readonly',
+  performance: 'readonly',
+  EventTarget: 'readonly',
+  CustomEvent: 'readonly',
+  TextEncoder: 'readonly',
 };
 
 export default [
@@ -47,4 +61,5 @@ export default [
   },
   { files: ['client/**/*.js'], languageOptions: { globals: browser } },
   { files: ['server/**/*.js'], languageOptions: { globals: node } },
+  { files: ['shared/**/*.js'], languageOptions: { globals: shared } },
 ];

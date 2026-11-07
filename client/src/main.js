@@ -1,15 +1,20 @@
+import { STEP, ARENA, shipHash } from 'shared';
 import { createLoop } from './loop.js';
 import { createInput } from './input.js';
 import { createAudio } from './audio.js';
 import { createHud } from './hud.js';
+import { createExplosion, updateExplosions, makeStars } from './effects.js';
 import { fetchJson, withRetry, loadAll } from './assets/loader.js';
 import { applyTestMode } from './assets/testMode.js';
 import { Connection } from './net/connection.js';
+import { NetStats } from './net/netstats.js';
+import { Session } from './net/session.js';
 import { mountChat } from './net/chatView.js';
 import { Lobby } from './lobby/lobby.js';
 import { mountLobbyView } from './lobby/lobbyView.js';
 import { setupCanvas } from './render/canvas.js';
 import { drawLoading } from './render/loading.js';
+import { drawNetgraph } from './render/netgraph.js';
 import { createSprites } from './render/sprites.js';
 import {
   drawShip,
@@ -20,14 +25,6 @@ import {
   drawStarfield,
   drawHud,
 } from './render/draw.js';
-import { World } from './sim/world.js';
-import { Ship } from './sim/ship.js';
-import { Asteroid } from './sim/asteroid.js';
-import { Explosion } from './sim/explosion.js';
-import { createPickup } from './sim/pickup.js';
-import { withHoming } from './sim/homing.js';
-import { wrap } from './sim/arena.js';
-import { findCollisions } from './sim/collision.js';
 
 const canvas = document.getElementById('game');
 const { ctx, width, height } = setupCanvas(canvas);
@@ -38,14 +35,10 @@ const overlay = document.getElementById('overlay');
 const retryButton = document.getElementById('retry');
 const fireButton = document.getElementById('fire');
 const chatRoot = document.getElementById('chat');
-const testMode = new URLSearchParams(window.location.search).get('test');
+const params = new URLSearchParams(window.location.search);
+const testMode = params.get('test');
 
-const stars = Array.from({ length: 140 }, () => ({
-  x: Math.random() * width(),
-  y: Math.random() * height(),
-  size: Math.random() < 0.15 ? 2 : 1,
-}));
-
+const lobbyStars = makeStars(1);
 let loadController = null;
 
 window.addEventListener('keydown', (e) => {
@@ -94,13 +87,15 @@ async function boot() {
     loadController = null;
   }
 
+  // має збігатися з хешем у shared/test/determinism.test.js (той самий код, інший рушій)
+  console.info(`[sim] determinism hash: ${shipHash(1000)}`);
   showLobby(result.assets, result.failed);
 }
 
 function showLobby(assets, failed) {
   audio.setBuffers(assets.sounds ?? {});
 
-  drawStarfield(ctx, width(), height(), stars);
+  drawStarfield(ctx, width(), height(), lobbyStars);
 
   const lobby = new Lobby();
   const view = mountLobbyView(overlay, lobby);
@@ -124,148 +119,135 @@ function showLobby(assets, failed) {
   lobby.start();
 }
 
+// ?lag=100&jitter=30&drop=0.02 передаємо серверу: емулятор мережі вмикається з першого пакета
 function wsUrl() {
   const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  return `${scheme}://${window.location.host}/ws`;
+  const query = new URLSearchParams();
+  for (const key of ['lag', 'jitter', 'drop']) {
+    if (params.has(key)) query.set(key, params.get(key));
+  }
+  const suffix = query.toString() ? `?${query}` : '';
+  return `${scheme}://${window.location.host}/ws${suffix}`;
 }
 
+const LAGS = [0, 50, 100, 200];
+const DROPS = [0, 0.02, 0.05];
+
 function startGame(assets, room, name) {
-  const arena = { ...assets.json.arena, ...room.arena };
+  const codec = params.get('codec') === 'json' ? 'json' : 'binary';
   const sprites = createSprites(assets.images.sheet, assets.json.frames);
 
-  // join шлемо при кожному (пере)підключенні: сервер про нас нічого не пам'ятає
+  // шина подій клієнта: звук і HUD слухають її так само, як колись слухали World
+  const bus = new EventTarget();
+  audio.attach(bus);
+  const hud = createHud(bus);
+  let explosions = [];
+  bus.addEventListener('exploded', (e) => explosions.push(createExplosion(e.detail.x, e.detail.y)));
+
   const connection = new Connection(wsUrl());
+  const stats = new NetStats(connection);
+  stats.lag = {
+    baseMs: Number(params.get('lag') ?? 0),
+    jitterMs: Number(params.get('jitter') ?? 0),
+    drop: Number(params.get('drop') ?? 0),
+  };
+  const session = new Session({
+    connection,
+    bus,
+    codec,
+    stats,
+    predict: params.get('predict') !== '0',
+  });
+
   mountChat(chatRoot, connection);
-  connection.addEventListener('open', () => connection.send({ type: 'join', room: room.id, name }));
+  connection.addEventListener('open', () =>
+    connection.send({ type: 'join', room: room.id, name, codec }),
+  );
   connection.connect();
 
-  const world = new World();
-  audio.attach(world);
-  const hud = createHud(world);
+  // [ ] - затримка інтерполяції, L - затримка мережі, K - втрати (змінюється на льоту)
+  window.addEventListener('keydown', (e) => {
+    const delay = session.interpolator.delay;
+    if (e.code === 'BracketLeft') session.interpolator.delay = Math.max(0, delay - 10);
+    if (e.code === 'BracketRight') session.interpolator.delay = Math.min(300, delay + 10);
 
-  let ship = spawnShip();
-  let respawnTimer = 0;
+    if (e.code !== 'KeyL' && e.code !== 'KeyK') return;
+    const lag = stats.lag;
+    if (e.code === 'KeyL') {
+      const next = LAGS[(LAGS.indexOf(lag.baseMs) + 1) % LAGS.length];
+      stats.lag = { ...lag, baseMs: next, jitterMs: Math.round(next * 0.3) };
+    } else {
+      stats.lag = { ...lag, drop: DROPS[(DROPS.indexOf(lag.drop) + 1) % DROPS.length] };
+    }
+    connection.send({ type: 'lag', ...stats.lag });
+  });
 
-  for (let i = 0; i < arena.asteroids; i++) spawnAsteroid();
-  for (let i = 0; i < arena.hunters; i++) withHoming(spawnAsteroid(), () => ship, 1.2);
-
-  setInterval(spawnPickup, arena.pickupEveryMs);
-
-  /*
-    this-баг (Lab 2): addEventListener('click', ship.fire) віддав би fire
-    this = кнопка. fire - поле-стрілка, плюс тут обгортка з world.
-  */
+  let fireRequested = false;
   fireButton.hidden = false;
   fireButton.addEventListener('click', () => {
-    ship.fire(world);
+    fireRequested = true; // стрільбу виконує крок симуляції, кнопка лише просить про неї
     fireButton.blur();
   });
 
-  function spawnShip() {
-    return world.spawn(new Ship(width() / 2, height() / 2));
+  let stars = null;
+  let lastRender = performance.now();
+
+  function simulate() {
+    session.step({
+      turn:
+        (input.isDown('ArrowRight') || input.isDown('KeyD') ? 1 : 0) -
+        (input.isDown('ArrowLeft') || input.isDown('KeyA') ? 1 : 0),
+      thrust: input.isDown('ArrowUp') || input.isDown('KeyW'),
+      fire: input.justPressed('Space') || input.isDown('Space') || fireRequested,
+    });
+    fireRequested = false;
   }
 
-  function spawnAsteroid() {
-    const edge = Math.floor(Math.random() * 4);
-    const x = edge === 0 ? 0 : edge === 1 ? width() : Math.random() * width();
-    const y = edge === 2 ? 0 : edge === 3 ? height() : Math.random() * height();
-    return world.spawn(new Asteroid(x, y));
-  }
-
-  function spawnPickup() {
-    const effect = Math.random() < 0.5 ? 'shield' : 'rapidfire';
-    world.spawn(createPickup(Math.random() * width(), Math.random() * height(), effect));
-  }
-
-  function explode(entity, kind) {
-    world.spawn(new Explosion(entity.pos.x, entity.pos.y));
-    world.emit('exploded', { kind, x: entity.pos.x, y: entity.pos.y });
-  }
-
-  function destroyShip(target) {
-    explode(target, 'ship');
-    target.alive = false;
-    respawnTimer = arena.respawnSeconds;
-  }
-
-  function handlePair(a, b) {
-    const bullet = a.kind === 'bullet' ? a : b.kind === 'bullet' ? b : null;
-    const other = bullet === a ? b : a;
-
-    if (bullet && other.kind === 'asteroid') {
-      other.hp -= bullet.damage;
-      bullet.alive = false;
-      if (other.hp <= 0) {
-        other.alive = false;
-        explode(other, 'asteroid');
-        ship.score += 10;
-        world.emit('scored', { points: 10, x: other.pos.x, y: other.pos.y });
-      } else {
-        world.emit('hit', { kind: 'asteroid' });
-      }
-      return;
-    }
-
-    if (bullet && other.kind === 'ship' && bullet.owner !== other) {
-      other.damage(bullet.damage);
-      bullet.alive = false;
-      world.emit('hit', { kind: 'ship' });
-      if (other.hp === 0) destroyShip(other);
-      return;
-    }
-
-    const shipEntity = a.kind === 'ship' ? a : b.kind === 'ship' ? b : null;
-    if (!shipEntity) return;
-    const rest = shipEntity === a ? b : a;
-
-    if (rest.kind === 'asteroid') {
-      shipEntity.damage(20);
-      rest.alive = false;
-      explode(rest, 'asteroid');
-      if (shipEntity.hp === 0) destroyShip(shipEntity);
-      return;
-    }
-
-    if (rest.kind === 'pickup') {
-      rest.apply(shipEntity);
-      rest.alive = false;
-    }
-  }
-
-  function simulate(dt) {
-    if (input.justPressed('Space')) ship.fire(world);
-
-    world.step(dt, { input, bounds: { width: width(), height: height() } });
-
-    for (const e of world) {
-      if (e.kind === 'ship' || e.kind === 'bullet') wrap(e, width(), height());
-    }
-
-    for (const [a, b] of findCollisions(world)) {
-      handlePair(a, b);
-    }
-
-    if (!ship.alive) {
-      respawnTimer -= dt;
-      if (respawnTimer <= 0) ship = spawnShip();
-    }
+  function drawEntity(e, alpha) {
+    if (e.kind === 'ship') {
+      // чужі кораблі іншого кольору
+      if (!e.isMe) ctx.filter = 'hue-rotate(150deg)';
+      drawShip(ctx, e, alpha, sprites);
+      ctx.filter = 'none';
+    } else if (e.kind === 'bullet') drawBullet(ctx, e, alpha, sprites);
+    else if (e.kind === 'asteroid') drawAsteroid(ctx, e, alpha, sprites);
+    else if (e.kind === 'pickup') drawPickup(ctx, e, sprites);
   }
 
   function render(alpha) {
-    drawStarfield(ctx, width(), height(), stars);
+    const now = performance.now();
+    explosions = updateExplosions(explosions, (now - lastRender) / 1000);
+    lastRender = now;
+    if (!stars && session.you !== null) stars = makeStars(session.seed);
 
-    for (const e of world) {
-      if (e.kind === 'ship') drawShip(ctx, e, alpha, sprites);
-      else if (e.kind === 'bullet') drawBullet(ctx, e, alpha, sprites);
-      else if (e.kind === 'asteroid') drawAsteroid(ctx, e, alpha, sprites);
-      else if (e.kind === 'explosion') drawExplosion(ctx, e);
-      else if (e.kind === 'pickup') drawPickup(ctx, e, sprites);
-    }
+    // арена завжди 1280x720, під вікно вона лише масштабується
+    const scale = Math.min(width() / ARENA.width, height() / ARENA.height);
+    const ox = (width() - ARENA.width * scale) / 2;
+    const oy = (height() - ARENA.height * scale) / 2;
 
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, width(), height());
+    ctx.save();
+    ctx.translate(ox, oy);
+    ctx.scale(scale, scale);
+    ctx.beginPath();
+    ctx.rect(0, 0, ARENA.width, ARENA.height);
+    ctx.clip();
+
+    drawStarfield(ctx, ARENA.width, ARENA.height, stars ?? lobbyStars);
+    for (const e of session.renderEntities(now)) drawEntity(e, alpha);
+    for (const e of explosions) drawExplosion(ctx, e);
     hud.draw(ctx);
-    if (ship.alive) drawHud(ctx, loop.stats, ship, { name, room: room.name });
+    ctx.restore();
+
+    ctx.strokeStyle = '#1c2740';
+    ctx.strokeRect(ox, oy, ARENA.width * scale, ARENA.height * scale);
+
+    const ship = session.prediction?.ship ?? { hp: 0, score: 0 };
+    drawHud(ctx, loop.stats, ship, { name, room: room.name });
+    drawNetgraph(ctx, stats, session, width());
   }
 
-  const loop = createLoop({ simulate, render });
+  const loop = createLoop({ step: STEP, simulate, render });
   loop.start();
 }

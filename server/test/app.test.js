@@ -1,66 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { once } from 'node:events';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { WebSocket } from 'ws';
-import { loadConfig } from '../src/config.js';
-import { createApp } from '../src/app.js';
 import { replay } from '../src/log/replay.js';
-
-async function setup(overrides = {}) {
-  const dir = await mkdtemp(path.join(tmpdir(), 'dogfight-'));
-  const clientDist = path.join(dir, 'dist');
-  await mkdir(clientDist);
-  await writeFile(path.join(clientDist, 'index.html'), '<h1>hi</h1>');
-
-  const config = {
-    ...loadConfig({}),
-    port: 0,
-    host: '127.0.0.1',
-    logDir: path.join(dir, 'logs'),
-    clientDist,
-    ...overrides,
-  };
-  const app = createApp(config);
-  const port = await app.start();
-  return { app, port, dir, config, base: `http://127.0.0.1:${port}` };
-}
-
-async function makeRoom(base, name = 'test') {
-  const res = await fetch(`${base}/api/rooms`, { method: 'POST', body: JSON.stringify({ name }) });
-  return (await res.json()).room;
-}
-
-// клієнт, що збирає повідомлення й вміє чекати на потрібне
-function connect(port, options) {
-  const socket = new WebSocket(`ws://127.0.0.1:${port}/ws`, options);
-  const messages = [];
-  const waiters = [];
-  socket.on('message', (data) => {
-    const msg = JSON.parse(data.toString());
-    messages.push(msg);
-    waiters.slice().forEach((w) => w(msg));
-  });
-  const next = (predicate) =>
-    new Promise((resolve) => {
-      const found = messages.find(predicate);
-      if (found) return resolve(found);
-      const waiter = (msg) => {
-        if (!predicate(msg)) return;
-        waiters.splice(waiters.indexOf(waiter), 1);
-        resolve(msg);
-      };
-      waiters.push(waiter);
-    });
-  const send = (msg) => socket.send(JSON.stringify({ v: 1, ...msg }));
-  const closed = new Promise((resolve) => socket.on('close', (code) => resolve(code)));
-  socket.on('error', () => {});
-  return { socket, messages, next, send, closed, opened: once(socket, 'open') };
-}
+import { setup, makeRoom, connect } from './helpers.js';
 
 test('два клієнти заходять в одну кімнату, бачать roster і чат одне одного', async () => {
   const { app, port, base } = await setup();
@@ -147,7 +92,6 @@ test('лог матчу: події пишуться в NDJSON, replay відд�
   await c.closed;
   await sleep(100); // кімната спорожніла -> видалилась -> лог дописався
 
-  const { readdir } = await import('node:fs/promises');
   const [file] = await readdir(config.logDir);
   const lines = (await readFile(path.join(config.logDir, file), 'utf8')).trim().split('\n');
   assert.deepEqual(

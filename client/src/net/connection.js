@@ -1,8 +1,11 @@
+import { codecs } from 'shared';
+
 const PROTOCOL_VERSION = 1;
 // після цих кодів сервер свідомо відмовив - перепідключатись марно
-// (дзеркало server/src/protocol.js; спільний пакет з'явиться в Lab 5)
+// (дзеркало server/src/protocol.js)
 const FINAL_CLOSE_CODES = new Set([4000, 4002, 4005]);
 const MAX_QUEUE = 50;
+const utf8 = new TextEncoder();
 
 export class Connection extends EventTarget {
   #url;
@@ -11,6 +14,8 @@ export class Connection extends EventTarget {
   #attempt = 0;
   #timer = null;
   #closed = false;
+  bytesIn = 0;
+  bytesOut = 0;
 
   constructor(url) {
     super();
@@ -20,23 +25,16 @@ export class Connection extends EventTarget {
   connect() {
     this.#timer = null;
     const socket = new WebSocket(this.#url);
+    socket.binaryType = 'arraybuffer';
     this.#socket = socket;
 
     socket.addEventListener('open', () => {
       this.#attempt = 0;
       this.#emit('open'); // слухач тут шле join: сокет уже відкритий, тож іде без черги
-      for (const data of this.#queue.splice(0)) socket.send(data);
+      for (const data of this.#queue.splice(0)) this.#transmit(data);
     });
 
-    socket.addEventListener('message', (e) => {
-      let msg;
-      try {
-        msg = JSON.parse(e.data);
-      } catch {
-        return;
-      }
-      if (typeof msg?.type === 'string') this.#emit(msg.type, msg);
-    });
+    socket.addEventListener('message', (e) => this.#onMessage(e.data));
 
     // у браузері після error завжди йде close, але не скрізь (наприклад, Node),
     // тому reconnect запускаємо з обох подій; другий виклик ігнорується
@@ -51,10 +49,44 @@ export class Connection extends EventTarget {
     });
   }
 
+  #onMessage(data) {
+    if (typeof data === 'string') {
+      this.bytesIn += utf8.encode(data).length;
+      let msg;
+      try {
+        msg = JSON.parse(data);
+      } catch {
+        return;
+      }
+      if (typeof msg?.type === 'string') this.#emit(msg.type, msg);
+      return;
+    }
+
+    this.bytesIn += data.byteLength;
+    const snapshot = codecs.binary.decodeSnapshot(data);
+    if (snapshot) this.#emit('snapshot', snapshot);
+  }
+
+  get isOpen() {
+    return this.#socket?.readyState === WebSocket.OPEN;
+  }
+
+  #transmit(data) {
+    this.bytesOut += typeof data === 'string' ? utf8.encode(data).length : data.byteLength;
+    this.#socket.send(data);
+  }
+
+  // керівні повідомлення (join, chat, ping...): чекають у черзі, поки сокет не відкрився
   send(message) {
     const data = JSON.stringify({ v: PROTOCOL_VERSION, ...message });
-    if (this.#socket?.readyState === WebSocket.OPEN) return this.#socket.send(data);
+    if (this.isOpen) return this.#transmit(data);
     if (this.#queue.length < MAX_QUEUE) this.#queue.push(data);
+  }
+
+  // інпути не чекають у черзі: застарілий інпут після reconnect нікому не потрібен
+  sendInput(input, codec) {
+    if (!this.isOpen) return;
+    this.#transmit(codecs[codec].encodeInput(input));
   }
 
   close() {
