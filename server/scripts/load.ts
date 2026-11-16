@@ -41,6 +41,13 @@ const StatsSchema = z.object({
 });
 const HealthSchema = z.object({ rssMb: z.number() });
 
+// значення одного показника з тексту /metrics
+async function metric(base: string, name: string): Promise<number> {
+  const text = await (await fetch(`${base}/metrics`)).text();
+  const line = text.split('\n').find((l) => l.startsWith(`${name} `));
+  return Number(line?.split(' ')[1] ?? 0);
+}
+
 async function startServer(port: number, players: number): Promise<ChildProcess> {
   const entry = new URL('../src/index.ts', import.meta.url);
   const rooms = Math.ceil(players / perRoom) + 2;
@@ -51,19 +58,29 @@ async function startServer(port: number, players: number): Promise<ChildProcess>
       HOST: '127.0.0.1',
       MAX_ROOMS: String(rooms),
       MAX_PLAYERS: String(Math.min(perRoom, players)),
+      MAX_TOTAL_PLAYERS: String(players + 10),
+      MAX_CONN_PER_IP: String(players + 10), // усі боти з однієї адреси
+      LOG_LEVEL: 'warn',
       LOG_DIR: path.resolve('server/logs/load'),
       // ліміти не повинні заважати вимірюванню самого кроку
       MAX_PAYLOAD: '4096',
     },
-    stdio: ['ignore', 'pipe', 'inherit'],
+    stdio: ['ignore', 'ignore', 'inherit'],
   });
-  await new Promise<void>((resolve, reject) => {
-    child.stdout?.on('data', (chunk: Buffer) => {
-      if (chunk.toString().includes('listening')) resolve();
-    });
-    child.once('exit', (code) => reject(new Error(`server exited early: ${code}`)));
-  });
-  return child;
+  // готовність по /health: рядок про старт на рівні warn не друкується
+  let exited: number | null | undefined;
+  child.once('exit', (code) => (exited = code));
+  for (let i = 0; i < 100; i++) {
+    if (exited !== undefined) throw new Error(`server exited early: ${exited}`);
+    try {
+      if ((await fetch(`http://127.0.0.1:${port}/health`)).ok) return child;
+    } catch {
+      // ще не слухає
+    }
+    await sleep(100);
+  }
+  child.kill();
+  throw new Error('server did not start in 10 s');
 }
 
 interface Row {
@@ -75,6 +92,8 @@ interface Row {
   jitterMs: number;
   overruns: number;
   rssMb: number;
+  cpuPercent: number; // скільки одного ядра зайняв процес сервера
+  outMBps: number; // скільки сервер віддає клієнтам
   over33: boolean;
 }
 
@@ -102,6 +121,9 @@ async function measure(clients: number, port: number): Promise<Row> {
     let jitter = 0;
     let overruns = 0;
     const samples: number[] = [];
+    const cpu0 = await metric(base, 'dogfight_process_cpu_seconds_total');
+    const out0 = await metric(base, 'dogfight_bytes_sent_total');
+    const t0 = Date.now();
     for (let s = 0; s < seconds; s++) {
       await sleep(1000);
       const { rooms } = StatsSchema.parse(await (await fetch(`${base}/api/stats`)).json());
@@ -114,6 +136,11 @@ async function measure(clients: number, port: number): Promise<Row> {
         samples.push(room.tickMs.p99);
       }
     }
+    const windowSec = (Date.now() - t0) / 1000;
+    const cpu1 = await metric(base, 'dogfight_process_cpu_seconds_total');
+    const out1 = await metric(base, 'dogfight_bytes_sent_total');
+    const cpuPercent = ((cpu1 - cpu0) / windowSec) * 100;
+    const outMBps = (out1 - out0) / windowSec / 1e6;
     const { rssMb } = HealthSchema.parse(await (await fetch(`${base}/health`)).json());
     const dropped = bots.filter((b) => b.closeCode !== null).length;
     if (dropped > 0) console.warn(`  (відключено ботів: ${dropped})`);
@@ -126,6 +153,8 @@ async function measure(clients: number, port: number): Promise<Row> {
       jitterMs: jitter,
       overruns,
       rssMb,
+      cpuPercent: Math.round(cpuPercent),
+      outMBps: Math.round(outMBps * 10) / 10,
       over33: p99 > STEP_BUDGET_MS || max > STEP_BUDGET_MS,
     };
   } finally {
@@ -139,16 +168,16 @@ console.log(
   `Режим: ${layout}, ${seconds} с на точку, ліміт кроку ${STEP_BUDGET_MS.toFixed(1)} мс\n`,
 );
 console.log(
-  '| Клієнтів | Кімнат | Крок p50, мс | Крок p99, мс | Крок max, мс | Jitter, мс | Перевищень | RSS, МБ |',
+  '| Клієнтів | Кімнат | Крок p50, мс | Крок p99, мс | Крок max, мс | Jitter, мс | Перевищень | RSS, МБ | CPU, % ядра | Віддає, МБ/с |',
 );
-console.log('|---|---|---|---|---|---|---|---|');
+console.log('|---|---|---|---|---|---|---|---|---|---|');
 const rows: Row[] = [];
 let port = 3400;
 for (const clients of counts) {
   const row = await measure(clients, port++);
   rows.push(row);
   console.log(
-    `| ${row.clients} | ${row.rooms} | ${row.stepP50} | ${row.stepP99} | ${row.stepMax} | ${row.jitterMs} | ${row.overruns} | ${row.rssMb} |`,
+    `| ${row.clients} | ${row.rooms} | ${row.stepP50} | ${row.stepP99} | ${row.stepMax} | ${row.jitterMs} | ${row.overruns} | ${row.rssMb} | ${row.cpuPercent} | ${row.outMBps} |`,
   );
 }
 

@@ -7,8 +7,10 @@ import { stat } from 'node:fs/promises';
 import { pipeline } from 'node:stream/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { CloseCode, CreateRoomRequestSchema } from 'shared';
+import { CreateRoomRequestSchema } from 'shared';
 import type { Config } from './config.ts';
+import { createLogger, type Logger } from './logger.ts';
+import { Metrics } from './metrics.ts';
 import { RoomManager } from './rooms.ts';
 import { Match } from './match.ts';
 import { attachWebSocket } from './ws.ts';
@@ -25,7 +27,10 @@ class HttpError extends Error {
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
-  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
+  res.writeHead(status, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'no-store',
+  });
   res.end(JSON.stringify(body));
 }
 
@@ -64,7 +69,12 @@ function readJson(req: IncomingMessage, limit: number): Promise<unknown> {
 
 const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
-export function createApp(config: Config) {
+export interface AppDeps {
+  log?: Logger;
+}
+
+export function createApp(config: Config, deps: AppDeps = {}) {
+  const log = deps.log ?? createLogger(config);
   const rooms = new RoomManager({
     maxRooms: config.maxRooms,
     maxPlayers: config.maxPlayers,
@@ -74,18 +84,52 @@ export function createApp(config: Config) {
   const logs = new Map<string, MatchLog>();
   const matches = new Map<string, Match>();
   const flushing = new Set<Promise<void>>();
+  let shuttingDown: Promise<void> | null = null;
+  let stopping = false;
+
+  // найгірші значення кроку серед усіх кімнат: для /metrics
+  const worstTick = () => {
+    const all = [...matches.values()].map((m) => m.stats());
+    const pick = (f: (s: (typeof all)[number]) => number): number => Math.max(0, ...all.map(f));
+    return {
+      avg: pick((s) => s.tickMs.avg),
+      p50: pick((s) => s.tickMs.p50),
+      p95: pick((s) => s.tickMs.p95),
+      p99: pick((s) => s.tickMs.p99),
+      max: pick((s) => s.tickMs.max),
+    };
+  };
+
+  const metrics = new Metrics({
+    players: () => rooms.totalPlayers(),
+    rooms: () => rooms.size,
+    connections: () => gateway.connections(),
+    tickMs: worstTick,
+    overruns: () => Math.max(0, ...[...matches.values()].map((m) => m.stats().overruns)),
+  });
 
   rooms.on('created', (room) => {
-    const log = startMatchLog(room, config.logDir);
-    logs.set(room.id, log);
-    flushing.add(log.done);
-    log.done
-      .catch((err: unknown) => console.error(`[matchlog] ${room.id}: ${errorMessage(err)}`))
-      .finally(() => flushing.delete(log.done));
+    const roomLog = log.child({ room: room.id });
+    roomLog.info({ name: room.name }, 'room created');
+
+    const matchLog = startMatchLog(room, config.logDir);
+    logs.set(room.id, matchLog);
+    flushing.add(matchLog.done);
+    matchLog.done
+      .catch((err: unknown) => roomLog.error({ err }, 'match log failed'))
+      .finally(() => flushing.delete(matchLog.done));
+
+    room.on('join', (player) =>
+      roomLog.info({ player: player.id, name: player.name, players: room.size }, 'player joined'),
+    );
+    room.on('leave', (player) =>
+      roomLog.info({ player: player.id, name: player.name, players: room.size }, 'player left'),
+    );
 
     matches.set(room.id, new Match(room, { seed: config.seed ?? randomInt(2 ** 32) }));
   });
   rooms.on('deleted', (room) => {
+    log.child({ room: room.id }).info('room closed');
     logs.get(room.id)?.stop();
     logs.delete(room.id);
     matches.get(room.id)?.stop();
@@ -93,6 +137,7 @@ export function createApp(config: Config) {
   });
 
   async function createRoom(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    if (stopping) throw new HttpError(503, 'shutting down');
     const body = CreateRoomRequestSchema.safeParse(await readJson(req, 1024));
     if (!body.success) throw new HttpError(400, 'name must be 1..32 chars');
 
@@ -128,17 +173,25 @@ export function createApp(config: Config) {
       const fixed = url.searchParams.get('fixed') === '1';
       if (url.searchParams.get('mode') === 'promise') {
         const failing = Promise.reject(new Error('boom (promise)'));
-        if (fixed) failing.catch((err: unknown) => console.warn(`handled: ${errorMessage(err)}`));
+        if (fixed) failing.catch((err: unknown) => log.warn(`handled: ${errorMessage(err)}`));
       } else {
         const emitter = new EventEmitter();
-        if (fixed)
-          emitter.on('error', (err: unknown) => console.warn(`handled: ${errorMessage(err)}`));
+        if (fixed) {
+          emitter.on('error', (err: unknown) => log.warn(`handled: ${errorMessage(err)}`));
+        }
         setImmediate(() => emitter.emit('error', new Error('boom (emitter)')));
       }
       sendJson(res, 200, { triggered: true, fixed });
       return true;
     }
     return false;
+  }
+
+  // /ready: чи може процес прийняти нового гравця. /health: чи процес взагалі живий.
+  function readiness(): { ready: boolean; reason?: string } {
+    if (stopping) return { ready: false, reason: 'shutting_down' };
+    if (rooms.totalPlayers() >= config.maxTotalPlayers) return { ready: false, reason: 'full' };
+    return { ready: true };
   }
 
   async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -148,10 +201,29 @@ export function createApp(config: Config) {
     if (pathname === '/health' && req.method === 'GET') {
       return sendJson(res, 200, {
         status: 'ok',
+        sha: config.gitSha,
+        version: config.appVersion,
         uptime: Math.round(process.uptime()),
         rssMb: Math.round(process.memoryUsage().rss / 1024 / 1024),
         rooms: rooms.size,
       });
+    }
+
+    if (pathname === '/ready' && req.method === 'GET') {
+      const state = readiness();
+      return sendJson(res, state.ready ? 200 : 503, {
+        ...state,
+        players: rooms.totalPlayers(),
+        rooms: rooms.size,
+      });
+    }
+
+    if (pathname === '/metrics' && req.method === 'GET') {
+      res.writeHead(200, {
+        'Content-Type': 'text/plain; version=0.0.4; charset=utf-8',
+        'Cache-Control': 'no-store',
+      });
+      return void res.end(metrics.render());
     }
 
     // тривалість тіка, jitter інтервалу і кількість перевищень по кожній активній кімнаті
@@ -179,44 +251,66 @@ export function createApp(config: Config) {
     try {
       await route(req, res);
     } catch (err: unknown) {
-      if (!(err instanceof HttpError)) console.error('[http] unexpected error:', err);
+      if (!(err instanceof HttpError)) log.error({ err, url: req.url }, 'unexpected http error');
       if (res.headersSent) return void res.destroy();
       const known = err instanceof HttpError;
       sendJson(res, known ? err.status : 500, { error: known ? err.message : 'internal error' });
     }
   });
 
-  const wss = attachWebSocket({ server, rooms, config });
+  const gateway = attachWebSocket({
+    server,
+    rooms,
+    config,
+    log,
+    metrics,
+    isShuttingDown: () => stopping,
+  });
 
   function start(): Promise<number> {
     return new Promise((resolve, reject) => {
       server.once('error', reject);
       server.listen(config.port, config.host, () => {
         server.off('error', reject);
+        metrics.start();
         const address = server.address();
-        resolve(typeof address === 'object' && address ? address.port : config.port);
+        const port = typeof address === 'object' && address ? address.port : config.port;
+        log.info({ host: config.host, port, version: config.appVersion }, 'server listening');
+        resolve(port);
       });
     });
   }
 
-  let shuttingDown: Promise<void> | null = null;
-
+  // Коректна зупинка (SIGTERM): перестаємо приймати з'єднання, кажемо клієнтам `shutdown`,
+  // закриваємо сокети кодом 1001, дописуємо логи. Укладаємось у shutdownTimeoutMs (< 10 с Docker).
   function shutdown(): Promise<void> {
     shuttingDown ??= (async () => {
+      const started = Date.now();
+      stopping = true; // /ready тепер 503, нові рукостискання 503
+      log.info(
+        { players: rooms.totalPlayers(), rooms: rooms.size, connections: gateway.connections() },
+        'shutdown: not accepting new connections',
+      );
+
       const closed = new Promise<void>((resolve) => server.close(() => resolve()));
       server.closeIdleConnections();
 
-      for (const socket of wss.clients) socket.close(CloseCode.SHUTDOWN, 'server shutting down');
-      wss.close();
+      await gateway.closeAll('server shutting down', Math.floor(config.shutdownTimeoutMs / 2));
+      log.info({ ms: Date.now() - started }, 'shutdown: websockets closed with code 1001');
 
       rooms.closeAll(); // зупиняє матчі й логи
       await Promise.allSettled([...flushing]); // дописуємо логи на диск
-      await Promise.race([closed, sleep(3000)]);
+      metrics.stop();
+
+      const left = Math.max(0, config.shutdownTimeoutMs - (Date.now() - started));
+      await Promise.race([closed, sleep(left)]);
+      server.closeAllConnections(); // якщо хтось ще висить на HTTP
+      log.info({ ms: Date.now() - started }, 'shutdown: complete');
     })();
     return shuttingDown;
   }
 
-  return { server, wss, rooms, start, shutdown };
+  return { server, wss: gateway.wss, rooms, metrics, log, start, shutdown };
 }
 
 export type App = ReturnType<typeof createApp>;

@@ -1,4 +1,5 @@
 import {
+  CloseCode,
   Emitter,
   FINAL_CLOSE_CODES,
   assertNever,
@@ -13,6 +14,8 @@ import {
 } from 'shared';
 
 const MAX_QUEUE = 50;
+// після стількох невдалих спроб перепідключення (0.5 + 1 + 2 + 4 с) вважаємо сервер недоступним
+const MAX_RECONNECT_ATTEMPTS = 4;
 const utf8 = new TextEncoder();
 
 // Події з'єднання: назва -> тип даних. Підписатись на неіснуючу подію tsc не дасть.
@@ -24,6 +27,9 @@ export type ConnectionEvents = {
   chat: Extract<ServerMessage, { type: 'chat' }>;
   pong: Extract<ServerMessage, { type: 'pong' }>;
   snapshot: Snapshot;
+  shutdown: Extract<ServerMessage, { type: 'shutdown' }>;
+  // з'єднання не відновиться само: сервер зупиняється, відмовив чи недоступний; пора в лобі
+  gaveUp: { reason: 'shutdown' | 'refused' | 'unreachable'; code: number | null };
 };
 
 export class Connection extends Emitter<ConnectionEvents> {
@@ -64,7 +70,13 @@ export class Connection extends Emitter<ConnectionEvents> {
     socket.addEventListener('close', (e) => {
       if (socket !== this.#socket) return;
       this.emit('close', { code: e.code });
-      if (!FINAL_CLOSE_CODES.has(e.code)) this.#reconnectLater();
+      if (FINAL_CLOSE_CODES.has(e.code)) {
+        this.#closed = true;
+        const reason = e.code === CloseCode.SHUTDOWN ? 'shutdown' : 'refused';
+        this.emit('gaveUp', { reason, code: e.code });
+      } else {
+        this.#reconnectLater();
+      }
     });
   }
 
@@ -99,6 +111,8 @@ export class Connection extends Emitter<ConnectionEvents> {
         return this.emit('chat', msg);
       case 'pong':
         return this.emit('pong', msg);
+      case 'shutdown':
+        return this.emit('shutdown', msg);
       case 'snapshot':
         return this.emit('snapshot', {
           tick: msg.tick,
@@ -142,6 +156,11 @@ export class Connection extends Emitter<ConnectionEvents> {
   // експоненційний backoff з jitter: 0.5с, 1с, 2с ... до 10с
   #reconnectLater(): void {
     if (this.#closed || this.#timer) return;
+    if (this.#attempt >= MAX_RECONNECT_ATTEMPTS) {
+      this.#closed = true;
+      this.emit('gaveUp', { reason: 'unreachable', code: null });
+      return;
+    }
     const delay = Math.min(10_000, 500 * 2 ** this.#attempt) * (0.5 + Math.random() * 0.5);
     this.#attempt += 1;
     this.#timer = setTimeout(() => this.connect(), delay);

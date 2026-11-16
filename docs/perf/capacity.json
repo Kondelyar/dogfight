@@ -1,0 +1,85 @@
+{
+  "layout": "rooms",
+  "seconds": 10,
+  "budgetMs": 33.333333333333336,
+  "rows": [
+    {
+      "clients": 8,
+      "rooms": 1,
+      "stepP50": 0.49,
+      "stepP99": 1.37,
+      "stepMax": 1.53,
+      "jitterMs": 15.1,
+      "overruns": 0,
+      "rssMb": 79,
+      "cpuPercent": 0,
+      "outMBps": 0.1,
+      "over33": false
+    },
+    {
+      "clients": 32,
+      "rooms": 4,
+      "stepP50": 0.42,
+      "stepP99": 0.9,
+      "stepMax": 1.34,
+      "jitterMs": 16.76,
+      "overruns": 0,
+      "rssMb": 95,
+      "cpuPercent": 15,
+      "outMBps": 0.6,
+      "over33": false
+    },
+    {
+      "clients": 64,
+      "rooms": 8,
+      "stepP50": 0.29,
+      "stepP99": 0.79,
+      "stepMax": 1.35,
+      "jitterMs": 16.68,
+      "overruns": 0,
+      "rssMb": 110,
+      "cpuPercent": 2,
+      "outMBps": 1.2,
+      "over33": false
+    },
+    {
+      "clients": 128,
+      "rooms": 16,
+      "stepP50": 0.25,
+      "stepP99": 0.61,
+      "stepMax": 0.87,
+      "jitterMs": 16.82,
+      "overruns": 0,
+      "rssMb": 113,
+      "cpuPercent": 19,
+      "outMBps": 2.4,
+      "over33": false
+    },
+    {
+      "clients": 256,
+      "rooms": 32,
+      "stepP50": 0.23,
+      "stepP99": 0.66,
+      "stepMax": 0.91,
+      "jitterMs": 15.95,
+      "overruns": 0,
+      "rssMb": 202,
+      "cpuPercent": 35,
+      "outMBps": 5,
+      "over33": false
+    },
+    {
+      "clients": 512,
+      "rooms": 64,
+      "stepP50": 0.17,
+      "stepP99": 0.46,
+      "stepMax": 0.65,
+      "jitterMs": 16.74,
+      "overruns": 0,
+      "rssMb": 223,
+      "cpuPercent": 46,
+      "outMBps": 10,
+      "over33": false
+    }
+  ]
+}

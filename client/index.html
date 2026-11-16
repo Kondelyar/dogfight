@@ -4,6 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>dogfight</title>
+    <meta name="theme-color" content="#05070d" />
+    <meta name="description" content="Багатокористувацька космічна гра" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icons/icon-192.png" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
     <style>
       html,
       body {
@@ -93,6 +98,22 @@
         max-height: 140px;
         overflow-y: auto;
       }
+      #touch {
+        position: fixed;
+        right: 110px;
+        bottom: 24px;
+        display: flex;
+        gap: 10px;
+        touch-action: none;
+      }
+      .touch {
+        width: 64px;
+        height: 64px;
+        border-radius: 12px;
+        font-size: 22px;
+        user-select: none;
+        -webkit-user-select: none;
+      }
       [hidden] {
         display: none;
       }
@@ -104,6 +125,7 @@
     <div id="chat" hidden></div>
     <button id="retry" hidden>Повторити</button>
     <button id="fire" hidden>FIRE</button>
+    <div id="touch" hidden></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

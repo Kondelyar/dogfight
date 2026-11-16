@@ -99,6 +99,13 @@ export class RoomManager extends EventEmitter<RoomManagerEvents> {
     return this.#rooms.size;
   }
 
+  // скільки гравців на весь процес (для ліміту й для /ready)
+  totalPlayers(): number {
+    let total = 0;
+    for (const room of this.#rooms.values()) total += room.size;
+    return total;
+  }
+
   list(): RoomInfo[] {
     return [...this.#rooms.values()].map((room) => room.info());
   }

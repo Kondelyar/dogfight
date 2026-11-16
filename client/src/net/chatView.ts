@@ -17,7 +17,7 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
-export function mountChat(root: HTMLElement, connection: Connection): void {
+export function mountChat(root: HTMLElement, connection: Connection, signal?: AbortSignal): void {
   const roster = el('p');
   const log = el('div');
   log.className = 'chat-log';
@@ -43,12 +43,16 @@ export function mountChat(root: HTMLElement, connection: Connection): void {
     input.blur();
   });
 
-  window.addEventListener('keydown', (e) => {
-    if (e.code === 'Enter' && document.activeElement !== input) {
-      e.preventDefault();
-      input.focus();
-    }
-  });
+  window.addEventListener(
+    'keydown',
+    (e) => {
+      if (e.code === 'Enter' && document.activeElement !== input) {
+        e.preventDefault();
+        input.focus();
+      }
+    },
+    signal ? { signal } : undefined,
+  );
 
   connection.on('roster', (msg) => {
     roster.textContent = `У кімнаті: ${msg.players.join(', ')}`;

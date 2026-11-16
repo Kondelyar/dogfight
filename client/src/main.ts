@@ -19,7 +19,9 @@ import { Session } from './net/session.ts';
 import { mountChat } from './net/chatView.ts';
 import { Lobby } from './lobby/lobby.ts';
 import { mountLobbyView } from './lobby/lobbyView.ts';
-import { startBots } from './bots/launch.ts';
+import { startBots, type BotHandle } from './bots/launch.ts';
+import { mountTouchControls } from './touch.ts';
+import { socketUrl } from './net/url.ts';
 import { exposeTestHook } from './e2e.ts';
 import { setupCanvas } from './render/canvas.ts';
 import { drawLoading, type LoadingState } from './render/loading.ts';
@@ -43,6 +45,7 @@ const overlay = byId('overlay', HTMLDivElement);
 const retryButton = byId('retry', HTMLButtonElement);
 const fireButton = byId('fire', HTMLButtonElement);
 const chatRoot = byId('chat', HTMLDivElement);
+const touchRoot = byId('touch', HTMLDivElement);
 const params = new URLSearchParams(window.location.search);
 const testMode = params.get('test');
 
@@ -54,7 +57,27 @@ window.addEventListener('keydown', (e) => {
 });
 retryButton.addEventListener('click', () => void boot());
 
+registerServiceWorker();
 void boot();
+
+// PWA: service worker робить гру встановлюваною. У розробці (vite dev) його не вмикаємо.
+function registerServiceWorker(): void {
+  if (!import.meta.env.PROD || !('serviceWorker' in navigator)) return;
+  navigator.serviceWorker.register('/sw.js').catch((err: unknown) => {
+    console.warn('[pwa] service worker not registered', err);
+  });
+}
+
+// Те, що потрібно, щоб повернутись у лобі після зупинки сервера
+let loaded: { assets: LoadedAssets; failed: LoadFailure[] } | null = null;
+let game: { dispose(): void } | null = null;
+
+function leaveToLobby(notice: string): void {
+  if (!game) return; // shutdown і закриття сокета приходять підряд: лобі показуємо один раз
+  game.dispose();
+  game = null;
+  if (loaded) showLobby(loaded.assets, loaded.failed, notice);
+}
 
 async function boot(): Promise<void> {
   retryButton.hidden = true;
@@ -96,10 +119,11 @@ async function boot(): Promise<void> {
 
   // має збігатися з хешем у shared/test/determinism.test.ts (той самий код, інший рушій)
   console.info(`[sim] determinism hash: ${shipHash(1000)}`);
+  loaded = result;
   showLobby(result.assets, result.failed);
 }
 
-function showLobby(assets: LoadedAssets, failed: LoadFailure[]): void {
+function showLobby(assets: LoadedAssets, failed: LoadFailure[], notice = ''): void {
   audio.setBuffers(assets.sounds);
 
   drawStarfield(ctx, width(), height(), lobbyStars);
@@ -113,9 +137,16 @@ function showLobby(assets: LoadedAssets, failed: LoadFailure[]): void {
     );
   }
 
+  if (notice) view.setNotice(notice);
+
   lobby.on('joined', ({ room, name }) => {
     overlay.hidden = true;
-    startGame(assets, room, name);
+    try {
+      game = startGame(assets, room, name);
+    } catch (err: unknown) {
+      game = null;
+      showLobby(assets, failed, err instanceof Error ? err.message : String(err));
+    }
   });
 
   overlay.hidden = false;
@@ -124,14 +155,12 @@ function showLobby(assets: LoadedAssets, failed: LoadFailure[]): void {
 
 // ?lag=100&jitter=30&drop=0.02 передаємо серверу: емулятор мережі вмикається з першого пакета
 function wsUrl(withLag = true): string {
-  const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
   const query = new URLSearchParams();
   for (const key of withLag ? ['lag', 'jitter', 'drop'] : []) {
     const value = params.get(key);
     if (value !== null) query.set(key, value);
   }
-  const suffix = query.toString() ? `?${query}` : '';
-  return `${scheme}://${window.location.host}/ws${suffix}`;
+  return socketUrl(window.location, query.toString()); // https -> wss, ws лише для localhost
 }
 
 const LAGS = [0, 50, 100, 200];
@@ -143,7 +172,9 @@ function turnOf(right: boolean, left: boolean): Turn {
   return right ? 1 : -1;
 }
 
-function startGame(assets: LoadedAssets, room: RoomInfo, name: string): void {
+function startGame(assets: LoadedAssets, room: RoomInfo, name: string): { dispose(): void } {
+  const lifetime = new AbortController(); // усі слухачі цієї гри знімаються разом
+  const { signal } = lifetime;
   const codec = params.get('codec') === 'json' ? 'json' : 'binary';
   const sheet = assets.images['sheet'];
   if (!sheet) throw new Error('sprite sheet is missing');
@@ -173,14 +204,23 @@ function startGame(assets: LoadedAssets, room: RoomInfo, name: string): void {
 
   if (params.has('e2e')) exposeTestHook(session);
 
-  mountChat(chatRoot, connection);
+  mountChat(chatRoot, connection, signal);
+  mountTouchControls(touchRoot, input);
+
+  // Сервер зупиняється (деплой, SIGTERM) або недоступний: гравець сам повертається в лобі
+  connection.on('shutdown', () => leaveToLobby('Сервер зупиняється. Оберіть кімнату ще раз'));
+  connection.on('gaveUp', ({ reason, code }) => {
+    if (reason === 'refused') return leaveToLobby('Сервер не пустив у кімнату (код ' + code + ')');
+    leaveToLobby('Сервер недоступний. Повернулись у лобі');
+  });
   connection.on('open', () => connection.send({ type: 'join', room: room.id, name, codec }));
   connection.connect();
 
   // ?bots=8&botMode=worker|main - боти в тій самій кімнаті (для навантаження і вимірів)
   const botCount = Number(params.get('bots') ?? 0);
+  let bots: BotHandle | null = null;
   if (botCount > 0) {
-    startBots(params.get('botMode') === 'main' ? 'main' : 'worker', {
+    bots = startBots(params.get('botMode') === 'main' ? 'main' : 'worker', {
       wsUrl: wsUrl(false),
       roomId: room.id,
       count: botCount,
@@ -189,30 +229,38 @@ function startGame(assets: LoadedAssets, room: RoomInfo, name: string): void {
   }
 
   // [ ] - затримка інтерполяції, L - затримка мережі, K - втрати (змінюється на льоту)
-  window.addEventListener('keydown', (e) => {
-    const delay = session.interpolator.delay;
-    if (e.code === 'BracketLeft') session.interpolator.delay = Math.max(0, delay - 10);
-    if (e.code === 'BracketRight') session.interpolator.delay = Math.min(300, delay + 10);
+  window.addEventListener(
+    'keydown',
+    (e) => {
+      const delay = session.interpolator.delay;
+      if (e.code === 'BracketLeft') session.interpolator.delay = Math.max(0, delay - 10);
+      if (e.code === 'BracketRight') session.interpolator.delay = Math.min(300, delay + 10);
 
-    if (e.code !== 'KeyL' && e.code !== 'KeyK') return;
-    const lag = stats.lag;
-    let next: LagSettings;
-    if (e.code === 'KeyL') {
-      const baseMs = LAGS[(LAGS.indexOf(lag.baseMs) + 1) % LAGS.length] ?? 0;
-      next = { ...lag, baseMs, jitterMs: Math.round(baseMs * 0.3) };
-    } else {
-      next = { ...lag, drop: DROPS[(DROPS.indexOf(lag.drop) + 1) % DROPS.length] ?? 0 };
-    }
-    stats.lag = next;
-    connection.send({ type: 'lag', ...next });
-  });
+      if (e.code !== 'KeyL' && e.code !== 'KeyK') return;
+      const lag = stats.lag;
+      let next: LagSettings;
+      if (e.code === 'KeyL') {
+        const baseMs = LAGS[(LAGS.indexOf(lag.baseMs) + 1) % LAGS.length] ?? 0;
+        next = { ...lag, baseMs, jitterMs: Math.round(baseMs * 0.3) };
+      } else {
+        next = { ...lag, drop: DROPS[(DROPS.indexOf(lag.drop) + 1) % DROPS.length] ?? 0 };
+      }
+      stats.lag = next;
+      connection.send({ type: 'lag', ...next });
+    },
+    { signal },
+  );
 
   let fireRequested = false;
   fireButton.hidden = false;
-  fireButton.addEventListener('click', () => {
-    fireRequested = true; // стрільбу виконує крок симуляції, кнопка лише просить про неї
-    fireButton.blur();
-  });
+  fireButton.addEventListener(
+    'click',
+    () => {
+      fireRequested = true; // стрільбу виконує крок симуляції, кнопка лише просить про неї
+      fireButton.blur();
+    },
+    { signal },
+  );
 
   let stars: ReturnType<typeof makeStars> | null = null;
   let lastRender = performance.now();
@@ -265,4 +313,20 @@ function startGame(assets: LoadedAssets, room: RoomInfo, name: string): void {
 
   const loop = createLoop({ step: STEP, simulate, render });
   loop.start();
+
+  return {
+    // Усе, що створила ця гра, зупиняється разом: цикл, таймери, сокет, боти, слухачі, панелі
+    dispose() {
+      loop.stop();
+      session.dispose();
+      stats.dispose();
+      connection.close();
+      bots?.stop();
+      lifetime.abort();
+      chatRoot.hidden = true;
+      fireButton.hidden = true;
+      touchRoot.hidden = true;
+      delete window.__dogfight;
+    },
+  };
 }

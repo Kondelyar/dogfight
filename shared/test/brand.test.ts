@@ -48,8 +48,9 @@ describe('протокол: константи', () => {
     expect(effectName(Effect.rapidfire)).toBe('rapidfire');
   });
 
-  it('після цих кодів клієнт не перепідключається', () => {
+  it('після цих кодів клієнт не перепідключається, а йде в лобі', () => {
     expect(FINAL_CLOSE_CODES.has(CloseCode.ROOM_FULL)).toBe(true);
-    expect(FINAL_CLOSE_CODES.has(CloseCode.SHUTDOWN)).toBe(false);
+    expect(FINAL_CLOSE_CODES.has(CloseCode.SHUTDOWN)).toBe(true);
+    expect(FINAL_CLOSE_CODES.has(CloseCode.RATE_LIMIT)).toBe(false);
   });
 });

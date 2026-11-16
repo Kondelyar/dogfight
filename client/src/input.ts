@@ -1,4 +1,6 @@
 export interface Input {
+  // клавіші з екранних кнопок (телефон) йдуть тим самим шляхом, що й справжні
+  setDown(code: string, down: boolean): void;
   isDown(code: string): boolean;
   justPressed(code: string): boolean;
 }
@@ -18,6 +20,14 @@ export function createInput(target: Window): Input {
   });
 
   return {
+    setDown(code, isDown) {
+      if (isDown) {
+        down.add(code);
+        justPressedSet.add(code);
+      } else {
+        down.delete(code);
+      }
+    },
     isDown(code) {
       return down.has(code);
     },

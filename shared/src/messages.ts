@@ -140,6 +140,8 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
   z.object({ v, type: z.literal('chat'), from: z.string(), text: z.string() }),
   z.object({ v, type: z.literal('pong'), t: num }),
   z.object({ v, type: z.literal('snapshot'), ...SnapshotSchema.shape }),
+  // сервер зупиняється (SIGTERM/деплой): клієнт має повернутись у лобі, а не перепідключатись
+  z.object({ v, type: z.literal('shutdown'), reason: z.string() }),
 ]);
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 

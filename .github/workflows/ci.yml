@@ -26,7 +26,7 @@ jobs:
         run: npm run build
       - name: Браузери для Playwright
         run: npx playwright install --with-deps chromium
-      - name: Сценарій у двох браузерах (Playwright)
+      - name: Сценарії в браузерах (Playwright)
         run: npm run e2e
       - name: Звіт Playwright
         if: failure()
@@ -37,3 +37,17 @@ jobs:
             test-results/
             playwright-report/
           if-no-files-found: ignore
+
+  # Образ збирається на кожен push, щоб Dockerfile не зламався непомітно. Публікує його окремий
+  # workflow (deploy.yml) лише за тегом v*.
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Збірка образу
+        run: docker build --build-arg GIT_SHA=${{ github.sha }} --build-arg APP_VERSION=ci -t dogfight:ci .
+      - uses: actions/setup-node@v4 # потрібен verify-image.sh (ws-probe.ts)
+        with:
+          node-version-file: .nvmrc
+      - name: Перевірка образу (розмір, root, залежності, health, docker stop)
+        run: bash scripts/verify-image.sh dogfight:ci ${{ github.sha }}

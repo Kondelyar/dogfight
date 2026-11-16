@@ -35,8 +35,10 @@ export const CloseCode = defineConst({
   NO_ROOM: 4005,
 });
 
-// після цих кодів сервер свідомо відмовив - перепідключатись марно
+// Після цих кодів перепідключатись марно: сервер свідомо відмовив (4000, 4002, 4005)
+// або зупиняється (1001): кімнати в пам'яті процесу, нова версія їх не має, тож клієнт іде в лобі.
 export const FINAL_CLOSE_CODES: ReadonlySet<number> = new Set([
+  CloseCode.SHUTDOWN,
   CloseCode.BAD_MESSAGE,
   CloseCode.ROOM_FULL,
   CloseCode.NO_ROOM,

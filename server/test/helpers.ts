@@ -34,6 +34,7 @@ export async function setup(overrides: Partial<Config> = {}) {
     logDir: path.join(dir, 'logs'),
     clientDist,
     seed: 5,
+    logLevel: 'silent',
     ...overrides,
   };
   const app = createApp(config);

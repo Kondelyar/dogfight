@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { Duplex } from 'node:stream';
 import type { Server as HttpServer, IncomingMessage } from 'node:http';
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 import {
@@ -11,6 +12,9 @@ import {
   type ClientMessage,
 } from 'shared';
 import type { Config } from './config.ts';
+import type { Logger } from './logger.ts';
+import type { Metrics } from './metrics.ts';
+import { clientIp, isOriginAllowed } from './origin.ts';
 import type { Player, Room, RoomManager } from './rooms.ts';
 import { createBucket } from './rateLimit.ts';
 import { createNetSim, type NetSim } from './netsim.ts';
@@ -31,11 +35,37 @@ export interface AttachOptions {
   server: HttpServer;
   rooms: RoomManager;
   config: Config;
+  log: Logger;
+  metrics: Metrics;
+  isShuttingDown: () => boolean;
 }
 
-export function attachWebSocket({ server, rooms, config }: AttachOptions): WebSocketServer {
-  const wss = new WebSocketServer({ server, path: '/ws', maxPayload: config.maxPayload });
+export interface Gateway {
+  wss: WebSocketServer;
+  /** скільки WebSocket зараз відкрито */
+  connections(): number;
+  /** шле всім `shutdown`, закриває сокети кодом 1001 і чекає, поки вони закриються (або timeout) */
+  closeAll(reason: string, timeoutMs: number): Promise<void>;
+}
+
+// Відмова на рукостисканні: це ще звичайний HTTP, тож відповідаємо статусом і рвемо з'єднання.
+function refuse(socket: Duplex, status: number, text: string): void {
+  socket.write(`HTTP/1.1 ${status} ${text}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
+  socket.destroy();
+}
+
+export function attachWebSocket({
+  server,
+  rooms,
+  config,
+  log,
+  metrics,
+  isShuttingDown,
+}: AttachOptions): Gateway {
+  // noServer: рукостискання (Origin, ліміт з одного IP) перевіряємо самі, до handleUpgrade
+  const wss = new WebSocketServer({ noServer: true, maxPayload: config.maxPayload });
   const missedPongs = new WeakMap<WebSocket, number>();
+  const perIp = new Map<string, number>();
 
   // повільному клієнту некритичне просто не шлемо, зовсім мертвого - закриваємо.
   // Усе, що йде клієнту, проходить через емулятор мережі.
@@ -54,15 +84,19 @@ export function attachWebSocket({ server, rooms, config }: AttachOptions): WebSo
           return;
         }
         if (buffered > config.slowClientBytes && !critical) return;
+        metrics.messagesOut += 1;
+        metrics.bytesOut += typeof data === 'string' ? Buffer.byteLength(data) : data.byteLength;
         socket.send(data);
       },
       { unreliable },
     );
   }
 
-  function onConnection(socket: WebSocket, req: IncomingMessage): void {
-    let joined: { room: Room; player: Player } | null = null;
+  function onConnection(socket: WebSocket, req: IncomingMessage, ip: string): void {
+    const connLog = log.child({ conn: randomUUID().slice(0, 8), ip });
+    let joined: { room: Room; player: Player; log: Logger } | null = null;
     missedPongs.set(socket, 0);
+    metrics.connectionsTotal += 1;
 
     // ?lag=100&jitter=30&drop=0.02 у адресі сокета вмикає емулятор одразу
     const net = createNetSim();
@@ -78,21 +112,36 @@ export function attachWebSocket({ server, rooms, config }: AttachOptions): WebSo
       perSecond: config.inputRatePerSec,
       burst: config.inputRateBurst,
     });
-    const joinTimer = setTimeout(
-      () => socket.close(CloseCode.JOIN_TIMEOUT, 'join timeout'),
-      config.joinTimeoutMs,
-    );
+    const joinTimer = setTimeout(() => {
+      connLog.warn('join timeout');
+      socket.close(CloseCode.JOIN_TIMEOUT, 'join timeout');
+    }, config.joinTimeoutMs);
+
+    // Закриття з гарантією: клієнт, що не відповідає на close-рукостискання (зловмисник, що далі
+    // шле сміття), не висітиме 30 с, а буде обірваний за секунду.
+    function closeHard(code: number, reason: string): void {
+      socket.close(code, reason);
+      setTimeout(() => socket.terminate(), 1000).unref();
+    }
 
     function reject(reason: string): void {
-      console.warn(`[ws] closing socket: ${reason}`);
-      socket.close(CloseCode.BAD_MESSAGE, reason);
+      (joined?.log ?? connLog).warn({ reason }, 'closing socket: bad message');
+      metrics.badFrames += 1;
+      closeHard(CloseCode.BAD_MESSAGE, reason);
     }
 
     function onJoin(msg: Extract<ClientMessage, { type: 'join' }>): void {
       if (joined) return reject('already joined');
 
       const room = rooms.get(msg.room);
-      if (!room) return socket.close(CloseCode.NO_ROOM, 'no such room');
+      if (!room) {
+        connLog.info({ room: msg.room }, 'join refused: no such room');
+        return socket.close(CloseCode.NO_ROOM, 'no such room');
+      }
+      if (rooms.totalPlayers() >= config.maxTotalPlayers) {
+        connLog.warn({ room: room.id }, 'join refused: server is full');
+        return socket.close(CloseCode.ROOM_FULL, 'server full');
+      }
 
       const player: Player = {
         id: randomUUID(),
@@ -101,10 +150,13 @@ export function attachWebSocket({ server, rooms, config }: AttachOptions): WebSo
         send: (data, critical) => send(socket, net, data, { critical: critical ?? false }),
         sendState: (data) => send(socket, net, data, { unreliable: true }),
       };
-      if (!room.join(player)) return socket.close(CloseCode.ROOM_FULL, 'room full');
+      if (!room.join(player)) {
+        connLog.info({ room: room.id }, 'join refused: room full');
+        return socket.close(CloseCode.ROOM_FULL, 'room full');
+      }
 
       clearTimeout(joinTimer);
-      joined = { room, player };
+      joined = { room, player, log: connLog.child({ room: room.id, player: player.id }) };
     }
 
     function dispatch(msg: ClientMessage): void {
@@ -133,20 +185,27 @@ export function attachWebSocket({ server, rooms, config }: AttachOptions): WebSo
     socket.on('message', (raw, isBinary) => {
       if (socket.readyState !== socket.OPEN) return;
 
+      const frame = toBuffer(raw);
+      metrics.messagesIn += 1;
+      metrics.bytesIn += frame.length;
+
       let msg: ClientMessage;
       if (isBinary) {
         // бінарні кадри бувають лише інпутами; декодер сам перевіряє довжину, версію і діапазони
-        const decoded = codecs.binary.decodeInput(toBuffer(raw));
+        const decoded = codecs.binary.decodeInput(frame);
         if (!decoded.ok) return reject(decoded.error);
         msg = { v: PROTOCOL_VERSION, type: 'input', ...decoded.value };
       } else {
-        const parsed = parseClientMessage(toBuffer(raw).toString('utf8'));
+        const parsed = parseClientMessage(frame.toString('utf8'));
         if (!parsed.ok) return reject(parsed.error);
         msg = parsed.value;
       }
 
       const limiter = msg.type === 'input' ? inputBucket : bucket;
-      if (!limiter.take()) return socket.close(CloseCode.RATE_LIMIT, 'rate limit');
+      if (!limiter.take()) {
+        (joined?.log ?? connLog).warn({ type: msg.type }, 'rate limit exceeded: closing socket');
+        return closeHard(CloseCode.RATE_LIMIT, 'rate limit');
+      }
 
       // інпути (як і знімки) ненадійні: емулятор може їх загубити
       net.inbound(() => dispatch(msg), { unreliable: msg.type === 'input' });
@@ -157,17 +216,55 @@ export function attachWebSocket({ server, rooms, config }: AttachOptions): WebSo
     });
 
     socket.on('error', (err) => {
-      console.warn(`[ws] socket error: ${err.message}`);
+      connLog.warn({ err }, 'socket error');
     });
 
-    socket.on('close', () => {
+    socket.on('close', (code) => {
       clearTimeout(joinTimer);
       joined?.room.leave(joined.player.id);
+      (joined?.log ?? connLog).info({ code }, 'connection closed');
     });
   }
 
-  wss.on('connection', onConnection);
-  wss.on('error', (err) => console.error('[ws] server error:', err));
+  // ---------- Рукостискання: шлях, зупинка, Origin, ліміт з одного IP ----------
+  server.on('upgrade', (req, socket, head) => {
+    socket.on('error', (err) => log.debug({ err }, 'upgrade socket error'));
+
+    const origin = req.headers.origin;
+    const ip = clientIp(req, config.trustProxy);
+    const path = new URL(req.url ?? '/', 'http://localhost').pathname;
+
+    if (path !== '/ws') return refuse(socket, 404, 'Not Found');
+    if (isShuttingDown()) return refuse(socket, 503, 'Service Unavailable');
+
+    if (!isOriginAllowed(origin, req.headers.host, config)) {
+      metrics.rejected += 1;
+      log.warn({ ip, origin: origin ?? null, reason: 'origin' }, 'websocket handshake refused');
+      return refuse(socket, 403, 'Forbidden');
+    }
+
+    const open = perIp.get(ip) ?? 0;
+    if (open >= config.maxConnPerIp) {
+      metrics.rejected += 1;
+      log.warn(
+        { ip, open, limit: config.maxConnPerIp, reason: 'ip-limit' },
+        'websocket handshake refused',
+      );
+      return refuse(socket, 429, 'Too Many Requests');
+    }
+
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      perIp.set(ip, (perIp.get(ip) ?? 0) + 1);
+      ws.once('close', () => {
+        const left = (perIp.get(ip) ?? 1) - 1;
+        if (left <= 0) perIp.delete(ip);
+        else perIp.set(ip, left);
+      });
+      onConnection(ws, req, ip);
+    });
+  });
+
+  wss.on('error', (err) => log.error({ err }, 'websocket server error'));
 
   // ping кожні heartbeatMs; хто не відповів на два - вважаємо мертвим
   const heartbeat = setInterval(() => {
@@ -183,5 +280,32 @@ export function attachWebSocket({ server, rooms, config }: AttachOptions): WebSo
   }, config.heartbeatMs);
   wss.on('close', () => clearInterval(heartbeat));
 
-  return wss;
+  async function closeAll(reason: string, timeoutMs: number): Promise<void> {
+    const notice = encodeServerMessage({ type: 'shutdown', reason });
+    const closing: Promise<void>[] = [];
+
+    for (const socket of wss.clients) {
+      closing.push(
+        new Promise<void>((resolve) => {
+          socket.once('close', () => resolve());
+          if (socket.readyState === socket.OPEN) {
+            socket.send(notice);
+            socket.close(CloseCode.SHUTDOWN, reason);
+          } else if (socket.readyState === socket.CLOSED) {
+            resolve();
+          }
+        }),
+      );
+    }
+
+    // клієнт, що не підтвердив закриття за timeoutMs, обривається силою
+    const timer = setTimeout(() => {
+      for (const socket of wss.clients) socket.terminate();
+    }, timeoutMs);
+    await Promise.all(closing);
+    clearTimeout(timer);
+    wss.close();
+  }
+
+  return { wss, connections: () => wss.clients.size, closeAll };
 }
