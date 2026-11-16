@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Типи (tsc, strict)
+        run: npm run typecheck
+      - name: Лінтер
+        run: npm run lint
+      - name: Тести
+        run: npm test
+      - name: Збірка клієнта
+        run: npm run build

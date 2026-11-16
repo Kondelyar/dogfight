@@ -1,4 +1,5 @@
 import js from '@eslint/js';
+import tseslint from 'typescript-eslint';
 
 const browser = {
   window: 'readonly',
@@ -19,8 +20,6 @@ const browser = {
   AudioContext: 'readonly',
   AbortController: 'readonly',
   AbortSignal: 'readonly',
-  EventTarget: 'readonly',
-  CustomEvent: 'readonly',
   WebSocket: 'readonly',
   TextEncoder: 'readonly',
 };
@@ -39,27 +38,32 @@ const node = {
   fetch: 'readonly',
   AbortController: 'readonly',
   TextEncoder: 'readonly',
-  EventTarget: 'readonly',
-  CustomEvent: 'readonly',
+  NodeJS: 'readonly',
 };
 
 // shared працює і в браузері, і в Node, тому тут лише те, що є в обох
 const shared = {
   console: 'readonly',
   performance: 'readonly',
-  EventTarget: 'readonly',
-  CustomEvent: 'readonly',
   TextEncoder: 'readonly',
 };
 
-export default [
-  { ignores: ['**/dist', '**/logs'] },
+export default tseslint.config(
+  { ignores: ['**/dist', '**/logs', '**/coverage'] },
   js.configs.recommended,
+  tseslint.configs.recommended,
   {
     languageOptions: { ecmaVersion: 2023, sourceType: 'module' },
-    rules: { 'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }] },
+    rules: {
+      'no-unused-vars': 'off',
+      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+      // жодного any: помилка, а не попередження
+      '@typescript-eslint/no-explicit-any': 'error',
+      // у catch тип unknown, а не any
+      '@typescript-eslint/no-unsafe-function-type': 'error',
+    },
   },
-  { files: ['client/**/*.js'], languageOptions: { globals: browser } },
-  { files: ['server/**/*.js'], languageOptions: { globals: node } },
-  { files: ['shared/**/*.js'], languageOptions: { globals: shared } },
-];
+  { files: ['client/**/*.ts'], languageOptions: { globals: browser } },
+  { files: ['server/**/*.ts'], languageOptions: { globals: node } },
+  { files: ['shared/**/*.ts'], languageOptions: { globals: shared } },
+);
