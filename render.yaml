@@ -1,0 +1,16 @@
+# Blueprint для Render: збирає образ із Dockerfile цього репозиторію (безкоштовний рівень).
+# Інстанція рівно одна: гравці кімнати мусять сидіти в одному процесі.
+services:
+  - type: web
+    name: dogfight
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    numInstances: 1
+    healthCheckPath: /ready
+    autoDeploy: true
+    envVars:
+      - key: TRUST_PROXY
+        value: '1'
+      - key: APP_VERSION
+        value: v1.0.0

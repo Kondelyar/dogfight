@@ -790,7 +790,7 @@ ok:   логи контейнера це рядки JSON
 **Як це підключити (разово).** Хостинг я обирати не можу, нижче Render (безкоштовний рівень, підтримує WebSocket); для Fly.io чи Railway різниця лише в кроці з hook.
 
 1. Запушити тег `v1.0.0`. Workflow опублікує образ. У GitHub: профіль → Packages → `dogfight` → Package settings → **Change visibility → Public** (інакше хостинг не зможе його скачати).
-2. Render → New → **Web Service** → *Existing image* → `ghcr.io/kondelyar/dogfight:latest`. Змінні: `ALLOWED_ORIGINS=https://<ваша-назва>.onrender.com`, `TRUST_PROXY=1`. Health Check Path: `/ready`. Порт Render задає сам через `PORT`. Одна інстанція (не більше!).
+2. Render → New → **Blueprint** → репозиторій `Kondelyar/dogfight`, гілка `main`: Render сам прочитає `render.yaml` (збірка з `Dockerfile`, одна інстанція, `/ready` як health check, `TRUST_PROXY=1`). Без `ALLOWED_ORIGINS` сервер пускає сокет лише зі своєї адреси, цього достатньо.
 3. Render → Settings → **Deploy Hook**: скопіювати URL. У GitHub: Settings → Secrets and variables → Actions → секрет `DEPLOY_HOOK_URL` (значення hook) і змінна `APP_URL` (`https://<ваша-назва>.onrender.com`). Параметр `imgURL`, яким workflow передає тег образу, описаний у документації Render до deploy hook (перевірте, що ваш тип сервісу його підтримує; інакше достатньо hook без нього).
 
 ### PWA

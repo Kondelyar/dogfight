@@ -84,6 +84,7 @@ const EnvSchema = z
 
     // яка збірка працює (для /health)
     GIT_SHA: text('dev'),
+    RENDER_GIT_COMMIT: z.preprocess(blankAsUndefined, z.string().optional()), // sha, який Render задає сам
     APP_VERSION: text('dev'),
   })
   .transform((env) => ({
@@ -114,7 +115,8 @@ const EnvSchema = z
     allowNoOrigin: env.ALLOW_NO_ORIGIN,
     trustProxy: env.TRUST_PROXY,
 
-    gitSha: env.GIT_SHA,
+    // образ вшиває GIT_SHA при збірці; якщо там 'dev', беремо sha, який дає хостинг
+    gitSha: env.GIT_SHA !== 'dev' ? env.GIT_SHA : (env.RENDER_GIT_COMMIT ?? 'dev'),
     appVersion: env.APP_VERSION,
   }));
 

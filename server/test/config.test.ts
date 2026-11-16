@@ -28,3 +28,9 @@ test('конфіг: погане значення дає зрозумілу по
   assert.throws(() => loadConfig({ MAX_ROOMS: '0' }), /MAX_ROOMS/);
   assert.throws(() => loadConfig({ SEED: '-1' }), /SEED/);
 });
+
+test('sha збірки: вшитий у образ має пріоритет, "dev" замінюється sha хостингу', () => {
+  assert.equal(loadConfig({ GIT_SHA: 'abc' }).gitSha, 'abc');
+  assert.equal(loadConfig({ GIT_SHA: 'dev', RENDER_GIT_COMMIT: 'def' }).gitSha, 'def');
+  assert.equal(loadConfig({}).gitSha, 'dev');
+});
