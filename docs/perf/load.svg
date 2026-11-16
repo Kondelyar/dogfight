@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 420" width="760" height="420" font-family="system-ui, sans-serif" font-size="12">
+<rect width="760" height="420" fill="#ffffff" />
+<style>text{fill:#222}</style>
+<text x="70" y="22" font-size="14" font-weight="600">Час кроку сервера залежно від кількості клієнтів (логарифмічна вісь)</text>
+<line x1="70" x2="590" y1="364" y2="364" stroke="#8884" />
+<text x="62" y="368" text-anchor="end">0.01 мс</text>
+<line x1="70" x2="590" y1="283" y2="283" stroke="#8884" />
+<text x="62" y="287" text-anchor="end">0.1 мс</text>
+<line x1="70" x2="590" y1="202" y2="202" stroke="#8884" />
+<text x="62" y="206" text-anchor="end">1 мс</text>
+<line x1="70" x2="590" y1="121" y2="121" stroke="#8884" />
+<text x="62" y="125" text-anchor="end">10 мс</text>
+<line x1="70" x2="590" y1="40" y2="40" stroke="#8884" />
+<text x="62" y="44" text-anchor="end">100 мс</text>
+<text x="70" y="386" text-anchor="middle">8</text>
+<text x="243.33333333333331" y="386" text-anchor="middle">32</text>
+<text x="416.66666666666663" y="386" text-anchor="middle">64</text>
+<text x="590" y="386" text-anchor="middle">128</text>
+<text x="330" y="408" text-anchor="middle">клієнтів (ботів)</text>
+<line x1="70" x2="590" y1="78.6468216322927" y2="78.6468216322927" stroke="#d6293a" stroke-width="2" stroke-dasharray="6 4" />
+<text x="596" y="82.6468216322927" fill="#d6293a">ліміт 33.3 мс</text>
+<polyline points="70.0,204.6 243.3,209.4 416.7,215.1 590.0,222.4" fill="none" stroke="#2a7fff" stroke-width="2.5"  />
+<circle cx="70" cy="204.55288116713123" r="3.5" fill="#2a7fff"><title>по 8 в кімнаті, p99: 0.93 мс</title></circle>
+<circle cx="243.33333333333331" cy="209.41271347082937" r="3.5" fill="#2a7fff"><title>по 8 в кімнаті, p99: 0.81 мс</title></circle>
+<circle cx="416.66666666666663" cy="215.05322365028232" r="3.5" fill="#2a7fff"><title>по 8 в кімнаті, p99: 0.69 мс</title></circle>
+<circle cx="590" cy="222.39676981249775" r="3.5" fill="#2a7fff"><title>по 8 в кімнаті, p99: 0.56 мс</title></circle>
+<line x1="596" x2="620" y1="50" y2="50" stroke="#2a7fff" stroke-width="2.5"  />
+<text x="626" y="54" font-size="11">по 8 в кімнаті, p99</text>
+<polyline points="70.0,181.1 243.3,190.2 416.7,204.9 590.0,207.7" fill="none" stroke="#2a7fff" stroke-width="2.5" stroke-dasharray="4 3" />
+<circle cx="70" cy="181.12803543559605" r="3.5" fill="#2a7fff"><title>по 8 в кімнаті, max: 1.81 мс</title></circle>
+<circle cx="243.33333333333331" cy="190.16362911006271" r="3.5" fill="#2a7fff"><title>по 8 в кімнаті, max: 1.4 мс</title></circle>
+<circle cx="416.66666666666663" cy="204.93318598501003" r="3.5" fill="#2a7fff"><title>по 8 в кімнаті, max: 0.92 мс</title></circle>
+<circle cx="590" cy="207.71706701714228" r="3.5" fill="#2a7fff"><title>по 8 в кімнаті, max: 0.85 мс</title></circle>
+<line x1="596" x2="620" y1="70" y2="70" stroke="#2a7fff" stroke-width="2.5" stroke-dasharray="4 3" />
+<text x="626" y="74" font-size="11">по 8 в кімнаті, max</text>
+<polyline points="70.0,143.4 243.3,180.0 416.7,166.0 590.0,144.1" fill="none" stroke="#e07b00" stroke-width="2.5"  />
+<circle cx="70" cy="143.40009056514995" r="3.5" fill="#e07b00"><title>одна кімната, p99: 5.29 мс</title></circle>
+<circle cx="243.33333333333331" cy="179.98082987054357" r="3.5" fill="#e07b00"><title>одна кімната, p99: 1.87 мс</title></circle>
+<circle cx="416.66666666666663" cy="166.03237153063583" r="3.5" fill="#e07b00"><title>одна кімната, p99: 2.78 мс</title></circle>
+<circle cx="590" cy="144.13928946063612" r="3.5" fill="#e07b00"><title>одна кімната, p99: 5.18 мс</title></circle>
+<line x1="596" x2="620" y1="90" y2="90" stroke="#e07b00" stroke-width="2.5"  />
+<text x="626" y="94" font-size="11">одна кімната, p99</text>
+<polyline points="70.0,141.3 243.3,169.6 416.7,164.1 590.0,138.6" fill="none" stroke="#e07b00" stroke-width="2.5" stroke-dasharray="4 3" />
+<circle cx="70" cy="141.27135843890605" r="3.5" fill="#e07b00"><title>одна кімната, max: 5.62 мс</title></circle>
+<circle cx="243.33333333333331" cy="169.62642856003592" r="3.5" fill="#e07b00"><title>одна кімната, max: 2.51 мс</title></circle>
+<circle cx="416.66666666666663" cy="164.06386623661527" r="3.5" fill="#e07b00"><title>одна кімната, max: 2.94 мс</title></circle>
+<circle cx="590" cy="138.61971744253083" r="3.5" fill="#e07b00"><title>одна кімната, max: 6.06 мс</title></circle>
+<line x1="596" x2="620" y1="110" y2="110" stroke="#e07b00" stroke-width="2.5" stroke-dasharray="4 3" />
+<text x="626" y="114" font-size="11">одна кімната, max</text>
+</svg>

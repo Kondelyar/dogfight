@@ -1,0 +1,4 @@
+{"ships":8,"ticks":1500,"tickMs":{"p50":0.019,"p95":0.039,"p99":0.141,"max":0.262},"over33ms":0,"gc":{"pauses":18,"over5ms":0,"totalMs":4.455},"mbSent":14.2}
+{"ships":32,"ticks":1500,"tickMs":{"p50":0.091,"p95":0.179,"p99":0.321,"max":0.524},"over33ms":0,"gc":{"pauses":36,"over5ms":0,"totalMs":9.173},"mbSent":162.9}
+{"ships":64,"ticks":1500,"tickMs":{"p50":0.211,"p95":0.363,"p99":0.501,"max":0.874},"over33ms":0,"gc":{"pauses":64,"over5ms":0,"totalMs":16.392},"mbSent":532.3}
+{"ships":128,"ticks":1500,"tickMs":{"p50":0.563,"p95":0.742,"p99":0.902,"max":1.488},"over33ms":0,"gc":{"pauses":105,"over5ms":0,"totalMs":27.582},"mbSent":1730.3}

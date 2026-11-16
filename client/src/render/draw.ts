@@ -34,10 +34,10 @@ export function drawShip(
 
   if (ship.thrusting) {
     ctx.globalAlpha = 0.6 + Math.random() * 0.4;
-    sprites.draw(ctx, 'flame', x, y, { angle, size: SHIP_SIZE });
+    sprites.draw(ctx, 'flame', x, y, angle, SHIP_SIZE);
     ctx.globalAlpha = 1;
   }
-  sprites.draw(ctx, 'ship', x, y, { angle, size: SHIP_SIZE });
+  sprites.draw(ctx, 'ship', x, y, angle, SHIP_SIZE);
 }
 
 export function drawBullet(
@@ -48,7 +48,7 @@ export function drawBullet(
 ): void {
   const x = lerp(bullet.prevPos.x, bullet.pos.x, alpha);
   const y = lerp(bullet.prevPos.y, bullet.pos.y, alpha);
-  sprites.draw(ctx, 'bullet', x, y, { size: 14 });
+  sprites.draw(ctx, 'bullet', x, y, 0, 14);
 }
 
 export function drawAsteroid(
@@ -61,7 +61,7 @@ export function drawAsteroid(
   const y = lerp(asteroid.prevPos.y, asteroid.pos.y, alpha);
   const angle = lerpAngle(asteroid.prevAngle, asteroid.angle, alpha);
   const name = asteroid.homing ? 'hunter' : 'asteroid';
-  sprites.draw(ctx, name, x, y, { angle, size: asteroid.radius * 2.2 });
+  sprites.draw(ctx, name, x, y, angle, asteroid.radius * 2.2);
 }
 
 export function drawPickup(
@@ -70,7 +70,7 @@ export function drawPickup(
   sprites: Sprites,
 ): void {
   const name = pickup.effect === 'shield' ? 'shield' : 'rapid';
-  sprites.draw(ctx, name, pickup.pos.x, pickup.pos.y, { size: pickup.radius * 2.4 });
+  sprites.draw(ctx, name, pickup.pos.x, pickup.pos.y, 0, pickup.radius * 2.4);
 }
 
 // Вичерпний switch по kind: новий вид сутності без малювання не збереться (tsc)
@@ -135,18 +135,33 @@ export interface LoopStats {
   frameMs: number;
 }
 
+// Рядки HUD міняються рідко, тому перебудовуємо їх лише коли змінилось число.
+// Раніше шість шаблонних рядків створювались на кожному кадрі.
+const hud = { key: '', steps: '', frames: '', ms: '', hp: '', score: '', who: '' };
+
 export function drawHud(
   ctx: CanvasRenderingContext2D,
   stats: LoopStats,
   ship: { hp: number; score: number },
   info: { name: string; room: string },
 ): void {
+  const key = `${stats.stepsPerSecond}|${stats.framesPerSecond}|${Math.round(stats.frameMs * 100)}|${ship.hp}|${ship.score}`;
+  if (key !== hud.key) {
+    hud.key = key;
+    hud.steps = `steps/s ${stats.stepsPerSecond}`;
+    hud.frames = `frames/s ${stats.framesPerSecond}`;
+    hud.ms = `frame ${stats.frameMs.toFixed(2)} ms`;
+    hud.hp = `hp ${ship.hp}`;
+    hud.score = `score ${ship.score}`;
+    hud.who = `${info.name} @ ${info.room}`;
+  }
+
   ctx.fillStyle = '#8fd3ff';
   ctx.font = '14px monospace';
-  ctx.fillText(`steps/s ${stats.stepsPerSecond}`, 12, 20);
-  ctx.fillText(`frames/s ${stats.framesPerSecond}`, 12, 38);
-  ctx.fillText(`frame ${stats.frameMs.toFixed(2)} ms`, 12, 56);
-  ctx.fillText(`hp ${ship.hp}`, 12, 80);
-  ctx.fillText(`score ${ship.score}`, 12, 98);
-  ctx.fillText(`${info.name} @ ${info.room}`, 12, 122);
+  ctx.fillText(hud.steps, 12, 20);
+  ctx.fillText(hud.frames, 12, 38);
+  ctx.fillText(hud.ms, 12, 56);
+  ctx.fillText(hud.hp, 12, 80);
+  ctx.fillText(hud.score, 12, 98);
+  ctx.fillText(hud.who, 12, 122);
 }

@@ -1,0 +1,29 @@
+{
+  "layout": "single",
+  "seconds": 10,
+  "budgetMs": 33.333333333333336,
+  "rows": [
+    {
+      "clients": 256,
+      "rooms": 1,
+      "stepP50": 7.75,
+      "stepP99": 10.59,
+      "stepMax": 11.13,
+      "jitterMs": 267.76,
+      "overruns": 2,
+      "rssMb": 126,
+      "over33": false
+    },
+    {
+      "clients": 512,
+      "rooms": 1,
+      "stepP50": 0,
+      "stepP99": 0,
+      "stepMax": 0,
+      "jitterMs": 0,
+      "overruns": 0,
+      "rssMb": 82,
+      "over33": false
+    }
+  ]
+}

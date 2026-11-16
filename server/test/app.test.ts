@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { readdir, readFile, writeFile } from 'node:fs/promises';

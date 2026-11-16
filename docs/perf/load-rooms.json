@@ -1,0 +1,51 @@
+{
+  "layout": "rooms",
+  "seconds": 12,
+  "budgetMs": 33.333333333333336,
+  "rows": [
+    {
+      "clients": 8,
+      "rooms": 1,
+      "stepP50": 0.43,
+      "stepP99": 0.93,
+      "stepMax": 1.81,
+      "jitterMs": 14.98,
+      "overruns": 0,
+      "rssMb": 77,
+      "over33": false
+    },
+    {
+      "clients": 32,
+      "rooms": 4,
+      "stepP50": 0.39,
+      "stepP99": 0.81,
+      "stepMax": 1.4,
+      "jitterMs": 15.87,
+      "overruns": 0,
+      "rssMb": 82,
+      "over33": false
+    },
+    {
+      "clients": 64,
+      "rooms": 8,
+      "stepP50": 0.38,
+      "stepP99": 0.69,
+      "stepMax": 0.92,
+      "jitterMs": 16.86,
+      "overruns": 0,
+      "rssMb": 107,
+      "over33": false
+    },
+    {
+      "clients": 128,
+      "rooms": 16,
+      "stepP50": 0.24,
+      "stepP99": 0.56,
+      "stepMax": 0.85,
+      "jitterMs": 16.16,
+      "overruns": 0,
+      "rssMb": 110,
+      "over33": false
+    }
+  ]
+}

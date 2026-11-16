@@ -18,7 +18,22 @@ jobs:
         run: npm run typecheck
       - name: Лінтер
         run: npm run lint
-      - name: Тести
-        run: npm test
+      - name: Тести (Vitest) і покриття shared
+        run: |
+          npm test
+          npm run test:coverage
       - name: Збірка клієнта
         run: npm run build
+      - name: Браузери для Playwright
+        run: npx playwright install --with-deps chromium
+      - name: Сценарій у двох браузерах (Playwright)
+        run: npm run e2e
+      - name: Звіт Playwright
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            test-results/
+            playwright-report/
+          if-no-files-found: ignore

@@ -1,7 +1,8 @@
-import { mulberry32, ARENA } from 'shared';
+import { Pool, mulberry32, ARENA } from 'shared';
 import type { Star } from './render/draw.ts';
 
-const EXPLOSION_TTL = 0.6;
+export const EXPLOSION_TTL = 0.6;
+const PARTICLES = 16;
 
 export interface Particle {
   offset: { x: number; y: number };
@@ -14,31 +15,66 @@ export interface Explosion {
   particles: Particle[];
 }
 
-// вибухи - лише картинка на клієнті, тож тут можна Math.random (на симуляцію це не впливає)
-export function createExplosion(x: number, y: number): Explosion {
+function blankExplosion(): Explosion {
   return {
-    pos: { x, y },
-    ttl: EXPLOSION_TTL,
-    particles: Array.from({ length: 16 }, () => {
-      const angle = Math.random() * Math.PI * 2;
-      const speed = 60 + Math.random() * 120;
-      return {
-        offset: { x: 0, y: 0 },
-        vel: { x: Math.cos(angle) * speed, y: Math.sin(angle) * speed },
-      };
-    }),
+    pos: { x: 0, y: 0 },
+    ttl: 0,
+    particles: Array.from({ length: PARTICLES }, () => ({
+      offset: { x: 0, y: 0 },
+      vel: { x: 0, y: 0 },
+    })),
   };
 }
 
-export function updateExplosions(list: Explosion[], dt: number): Explosion[] {
-  for (const e of list) {
-    e.ttl -= dt;
-    for (const p of e.particles) {
-      p.offset.x += p.vel.x * dt;
-      p.offset.y += p.vel.y * dt;
-    }
+// вибухи - лише картинка на клієнті, тож тут можна Math.random (на симуляцію це не впливає)
+function launch(e: Explosion, x: number, y: number): Explosion {
+  e.pos.x = x;
+  e.pos.y = y;
+  e.ttl = EXPLOSION_TTL;
+  for (const p of e.particles) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 60 + Math.random() * 120;
+    p.offset.x = 0;
+    p.offset.y = 0;
+    p.vel.x = Math.cos(angle) * speed;
+    p.vel.y = Math.sin(angle) * speed;
   }
-  return list.filter((e) => e.ttl > 0);
+  return e;
+}
+
+// Вибух з 16 частинок раніше створював ~50 об'єктів на кожен вибух і новий масив щокадру.
+// Тепер вибухи беруться з пулу і повертаються, коли час життя вийшов.
+export class Explosions {
+  readonly active: Explosion[] = [];
+  #pool = new Pool<Explosion>(blankExplosion, { max: 64 });
+
+  get pool(): Pool<Explosion> {
+    return this.#pool;
+  }
+
+  spawn(x: number, y: number): Explosion {
+    const e = launch(this.#pool.acquire(), x, y);
+    this.active.push(e);
+    return e;
+  }
+
+  // оновлює частинки й на місці прибирає ті вибухи, що догоріли
+  update(dt: number): void {
+    let kept = 0;
+    for (const e of this.active) {
+      e.ttl -= dt;
+      if (e.ttl <= 0) {
+        this.#pool.release(e);
+        continue;
+      }
+      for (const p of e.particles) {
+        p.offset.x += p.vel.x * dt;
+        p.offset.y += p.vel.y * dt;
+      }
+      this.active[kept++] = e;
+    }
+    this.active.length = kept;
+  }
 }
 
 // зірки з seed сервера: у всіх гравців однакове небо

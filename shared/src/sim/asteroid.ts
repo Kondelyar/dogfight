@@ -37,7 +37,7 @@ export class Asteroid extends Entity {
       if (target) steerToward(this, target, HUNTER_TURN, dt);
     }
 
-    this.pos = this.pos.add(this.vel.scale(dt));
+    this.pos = new Vector2(this.pos.x + this.vel.x * dt, this.pos.y + this.vel.y * dt);
 
     // відбиваємось лише коли летимо назовні, інакше застрягнемо біля краю
     const { x, y } = this.pos;

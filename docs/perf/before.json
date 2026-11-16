@@ -1,0 +1,107 @@
+{
+  "label": "before",
+  "url": "http://localhost:3201",
+  "seconds": 30,
+  "bots": 8,
+  "query": "",
+  "frames": 5449,
+  "frameWorkMs": {
+    "count": 5449,
+    "p50": 0.3,
+    "p95": 0.4,
+    "p99": 0.5,
+    "max": 0.8,
+    "mean": 0.31
+  },
+  "frameIntervalMs": {
+    "count": 5449,
+    "p50": 5.6,
+    "p95": 5.7,
+    "p99": 5.7,
+    "max": 6.9,
+    "mean": 5.56
+  },
+  "longFrames": 0,
+  "gc": {
+    "pauses": {
+      "count": 74,
+      "p50": 0.59,
+      "p95": 1.54,
+      "p99": 3.37,
+      "max": 3.37,
+      "mean": 0.92
+    },
+    "over5ms": 0,
+    "over10ms": 0,
+    "totalMs": 67.98,
+    "byName": {
+      "MinorGC": 21,
+      "V8.GCScavenger": 21,
+      "MajorGC": 16,
+      "V8.GCFinalizeMC": 16
+    }
+  },
+  "sampledAllocMb": 101.28,
+  "topAllocators": [
+    {
+      "fn": "sample index-D6tWUILC.js:7273",
+      "mb": 24.92,
+      "percent": 24.6
+    },
+    {
+      "fn": "renderEntities index-D6tWUILC.js:7355",
+      "mb": 23.81,
+      "percent": 23.5
+    },
+    {
+      "fn": "drawNetgraph index-D6tWUILC.js:7712",
+      "mb": 6.94,
+      "percent": 6.9
+    },
+    {
+      "fn": "readEntity index-D6tWUILC.js:6562",
+      "mb": 6.75,
+      "percent": 6.7
+    },
+    {
+      "fn": "lerpRecord index-D6tWUILC.js:7240",
+      "mb": 4.61,
+      "percent": 4.6
+    },
+    {
+      "fn": "drawBullet index-D6tWUILC.js:7777",
+      "mb": 3.89,
+      "percent": 3.8
+    },
+    {
+      "fn": "drawShip index-D6tWUILC.js:7766",
+      "mb": 3.8,
+      "percent": 3.8
+    },
+    {
+      "fn": "render index-D6tWUILC.js:7989",
+      "mb": 3.46,
+      "percent": 3.4
+    },
+    {
+      "fn": "updateExplosions index-D6tWUILC.js:6850",
+      "mb": 3.18,
+      "percent": 3.1
+    },
+    {
+      "fn": "drawStarfield index-D6tWUILC.js:7819",
+      "mb": 2.16,
+      "percent": 2.1
+    },
+    {
+      "fn": "drawExplosion index-D6tWUILC.js:7810",
+      "mb": 1.93,
+      "percent": 1.9
+    },
+    {
+      "fn": "push :0",
+      "mb": 1.4,
+      "percent": 1.4
+    }
+  ]
+}

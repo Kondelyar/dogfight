@@ -1,0 +1,107 @@
+{
+  "label": "bots-main",
+  "url": "http://localhost:3202",
+  "seconds": 30,
+  "bots": 0,
+  "query": "?bots=8&botMode=main",
+  "frames": 5444,
+  "frameWorkMs": {
+    "count": 5444,
+    "p50": 0.3,
+    "p95": 0.5,
+    "p99": 0.6,
+    "max": 1.4,
+    "mean": 0.35
+  },
+  "frameIntervalMs": {
+    "count": 5444,
+    "p50": 5.6,
+    "p95": 5.7,
+    "p99": 5.9,
+    "max": 10.1,
+    "mean": 5.56
+  },
+  "longFrames": 0,
+  "gc": {
+    "pauses": {
+      "count": 60,
+      "p50": 0.82,
+      "p95": 2.19,
+      "p99": 3.06,
+      "max": 3.06,
+      "mean": 1.09
+    },
+    "over5ms": 0,
+    "over10ms": 0,
+    "totalMs": 65.25,
+    "byName": {
+      "MinorGC": 15,
+      "V8.GCScavenger": 15,
+      "MajorGC": 15,
+      "V8.GCFinalizeMC": 15
+    }
+  },
+  "sampledAllocMb": 97.52,
+  "topAllocators": [
+    {
+      "fn": "readEntity index-CLGZEoRI.js:6718",
+      "mb": 50.42,
+      "percent": 51.7
+    },
+    {
+      "fn": "decide index-CLGZEoRI.js:6385",
+      "mb": 4.33,
+      "percent": 4.4
+    },
+    {
+      "fn": "collect_fn index-CLGZEoRI.js:7742",
+      "mb": 4.05,
+      "percent": 4.2
+    },
+    {
+      "fn": "render index-CLGZEoRI.js:8436",
+      "mb": 3.4,
+      "percent": 3.5
+    },
+    {
+      "fn": "update index-CLGZEoRI.js:7037",
+      "mb": 3.11,
+      "percent": 3.2
+    },
+    {
+      "fn": "visit index-CLGZEoRI.js:7529",
+      "mb": 2.92,
+      "percent": 3
+    },
+    {
+      "fn": "(anonymous) index-CLGZEoRI.js:6842",
+      "mb": 2.52,
+      "percent": 2.6
+    },
+    {
+      "fn": "push index-CLGZEoRI.js:7509",
+      "mb": 2.44,
+      "percent": 2.5
+    },
+    {
+      "fn": "drawStarfield index-CLGZEoRI.js:8246",
+      "mb": 2.22,
+      "percent": 2.3
+    },
+    {
+      "fn": "drawHud index-CLGZEoRI.js:8255",
+      "mb": 1.98,
+      "percent": 2
+    },
+    {
+      "fn": "drawExplosion index-CLGZEoRI.js:8237",
+      "mb": 1.86,
+      "percent": 1.9
+    },
+    {
+      "fn": "every :0",
+      "mb": 1.77,
+      "percent": 1.8
+    }
+  ]
+}

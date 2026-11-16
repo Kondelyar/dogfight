@@ -3,3 +3,8 @@ dist
 logs
 .env
 .DS_Store
+coverage
+test-results
+playwright-report
+prof
+*.tsbuildinfo

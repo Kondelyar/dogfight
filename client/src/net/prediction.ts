@@ -1,5 +1,6 @@
 import {
   STEP,
+  releaseBullet,
   ARENA,
   wrapDelta,
   type Bullet,
@@ -8,7 +9,8 @@ import {
   type Ship,
   type ShipRecord,
 } from 'shared';
-import type { RenderShip } from '../render/types.ts';
+import type { RenderShip, Writable } from '../render/types.ts';
+import { createShipSlot } from '../render/slots.ts';
 
 const TELEPORT = 150; // така звірка - це відродження чи телепорт, плавно її не згладити
 const SMOOTH_TAU = 0.05; // ~100 мс, щоб поправка розтанула
@@ -37,8 +39,11 @@ export class Prediction {
     const turn = ship.angle - ship.prevAngle;
 
     ship.applyState(record);
-    this.pending = this.pending.filter((input) => input.seq > ack);
-    for (const input of this.pending) ship.applyInput(input, STEP);
+    this.#dropConfirmed(ack);
+    for (const input of this.pending) {
+      const replayed = ship.applyInput(input, STEP);
+      if (replayed) releaseBullet(replayed); // куля вже показана як привид, повтор їй не потрібен
+    }
 
     if (this.pending.length === 0) {
       // нічого не прогнали, тож зберігаємо рух останнього кроку для плавної інтерполяції кадрів
@@ -59,23 +64,34 @@ export class Prediction {
     return magnitude;
   }
 
+  // викидає підтверджені інпути на місці, без нового масиву на кожен знімок
+  #dropConfirmed(ack: Seq): void {
+    let kept = 0;
+    for (const input of this.pending) if (input.seq > ack) this.pending[kept++] = input;
+    this.pending.length = kept;
+  }
+
   decay(dt: number): void {
     const k = Math.exp(-dt / SMOOTH_TAU);
     this.smooth.x *= k;
     this.smooth.y *= k;
   }
 
+  // Один об'єкт на весь час гри: переписується щокадру (раніше створювалось три об'єкти за кадр).
+  // Тут pos і prevPos різні, бо власний корабель інтерполюється між кроками симуляції.
+  #view: Writable<RenderShip> = { ...createShipSlot(), isMe: true, prevPos: { x: 0, y: 0 } };
+
   renderShip(): RenderShip {
     const { ship, smooth } = this;
-    return {
-      kind: 'ship',
-      isMe: true,
-      thrusting: ship.thrusting,
-      radius: ship.radius,
-      pos: { x: ship.pos.x + smooth.x, y: ship.pos.y + smooth.y },
-      prevPos: { x: ship.prevPos.x + smooth.x, y: ship.prevPos.y + smooth.y },
-      angle: ship.angle,
-      prevAngle: ship.prevAngle,
-    };
+    const view = this.#view;
+    view.thrusting = ship.thrusting;
+    view.radius = ship.radius;
+    view.pos.x = ship.pos.x + smooth.x;
+    view.pos.y = ship.pos.y + smooth.y;
+    view.prevPos.x = ship.prevPos.x + smooth.x;
+    view.prevPos.y = ship.prevPos.y + smooth.y;
+    view.angle = ship.angle;
+    view.prevAngle = ship.prevAngle;
+    return view;
   }
 }

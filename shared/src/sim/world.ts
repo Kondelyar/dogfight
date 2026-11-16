@@ -5,7 +5,7 @@ import { Vector2 } from './vector.ts';
 import { STEP, ARENA, RULES } from './constants.ts';
 import { mulberry32 } from '../prng.ts';
 import { Ship } from './ship.ts';
-import { Bullet } from './bullet.ts';
+import { Bullet, releaseBullet } from './bullet.ts';
 import { Asteroid } from './asteroid.ts';
 import { Pickup, applyPickup } from './pickup.ts';
 import { findCollisions } from './collision.ts';
@@ -224,7 +224,10 @@ export class World extends Emitter<WorldEvents> {
     for (const [a, b] of findCollisions(this)) this.#resolve(a, b);
 
     for (const e of [...this]) {
-      if (!e.alive && e.kind !== 'ship') this.#entities.delete(e.id);
+      if (!e.alive && e.kind !== 'ship') {
+        this.#entities.delete(e.id);
+        if (e.kind === 'bullet') releaseBullet(e); // кулю не тримає ніхто, повертаємо в пул
+      }
     }
 
     for (const [id, left] of this.#respawns) {
@@ -256,6 +259,8 @@ export class World extends Emitter<WorldEvents> {
   }
 
   records(): EntityRecord[] {
-    return [...this].map(toRecord);
+    const out: EntityRecord[] = [];
+    for (const e of this.#entities.values()) out.push(toRecord(e));
+    return out;
   }
 }

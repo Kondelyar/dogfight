@@ -7,18 +7,15 @@ export const FramesSchema = z.record(
 );
 export type Frames = z.infer<typeof FramesSchema>;
 
-export interface DrawOptions {
-  angle?: number;
-  size?: number;
-}
-
 export interface Sprites {
+  // кут і розмір передаються числами, а не об'єктом: об'єкт параметрів - це алокація на кожен виклик
   draw(
     ctx: CanvasRenderingContext2D,
     name: string,
     x: number,
     y: number,
-    options?: DrawOptions,
+    angle: number,
+    size: number,
   ): void;
 }
 
@@ -28,11 +25,12 @@ export function createSprites(sheet: CanvasImageSource, frames: Frames): Sprites
     name: string,
     x: number,
     y: number,
-    { angle = 0, size }: DrawOptions = {},
+    angle: number,
+    size: number,
   ): void {
     const f = frames[name];
     if (!f) return;
-    const w = size ?? f.w;
+    const w = size > 0 ? size : f.w;
     const h = w * (f.h / f.w);
 
     ctx.save();

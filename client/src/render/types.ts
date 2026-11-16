@@ -33,3 +33,9 @@ export interface RenderPickup extends RenderBase {
 }
 
 export type RenderEntity = RenderShip | RenderBullet | RenderAsteroid | RenderPickup;
+
+// Версія з полями, що змінюються: такі об'єкти живуть у покадровому пулі і переписуються щокадру
+// (замість нових об'єктів на кожну сутність кожного кадру). Назовні віддаються як readonly.
+export type Writable<T> = {
+  -readonly [K in keyof T]: K extends 'pos' | 'prevPos' ? { x: number; y: number } : T[K];
+};

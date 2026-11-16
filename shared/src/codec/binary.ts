@@ -1,4 +1,4 @@
-import { entityId, fail, ok, seq, seq16, tick, type Result } from '../brand.ts';
+import { entityId, fail, ok, seq, seq16, tick, type Result, type Seq } from '../brand.ts';
 import { BINARY_VERSION, EventType, Kind, MsgType } from '../protocol.ts';
 import {
   parseInput,
@@ -269,6 +269,14 @@ export function encodeSnapshot({ tick: t, ack, entities, events }: Snapshot): Ar
     o += EVENT;
   }
   return buf;
+}
+
+// Кадр для іншого клієнта: ті самі сутності й події, інший ack (байти 6..9). Копія й чотири байти
+// замість повного кодування сотень сутностей для кожного клієнта окремо.
+export function withAck(frame: ArrayBuffer, ack: Seq): ArrayBuffer {
+  const copy = frame.slice(0);
+  new DataView(copy).setUint32(6, ack, true);
+  return copy;
 }
 
 // Не кидає: порожній, обрізаний чи чужий буфер дає { ok: false }.

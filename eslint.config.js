@@ -49,7 +49,9 @@ const shared = {
 };
 
 export default tseslint.config(
-  { ignores: ['**/dist', '**/logs', '**/coverage'] },
+  {
+    ignores: ['**/dist', '**/logs', '**/coverage', 'docs/**', 'test-results', 'playwright-report'],
+  },
   js.configs.recommended,
   tseslint.configs.recommended,
   {
@@ -61,9 +63,15 @@ export default tseslint.config(
       '@typescript-eslint/no-explicit-any': 'error',
       // у catch тип unknown, а не any
       '@typescript-eslint/no-unsafe-function-type': 'error',
+      // tsc сам знає, які глобальні імена існують (DOM, Node), тож no-undef лише заважає
+      'no-undef': 'off',
     },
   },
   { files: ['client/**/*.ts'], languageOptions: { globals: browser } },
   { files: ['server/**/*.ts'], languageOptions: { globals: node } },
   { files: ['shared/**/*.ts'], languageOptions: { globals: shared } },
+  {
+    files: ['tools/**/*.ts', 'e2e/**/*.ts', 'playwright.config.ts'],
+    languageOptions: { globals: { ...node, ...browser } },
+  },
 );

@@ -1,5 +1,6 @@
 import {
   STEP,
+  FrameArena,
   Ship,
   Kind,
   EventType,
@@ -7,8 +8,10 @@ import {
   effectName,
   seq,
   tick,
+  releaseBullet,
   toSeq16,
   type Bullet,
+  type EntityRecord,
   type Codec,
   type Emitter,
   type EntityId,
@@ -22,10 +25,17 @@ import {
   type Seq,
 } from 'shared';
 import { Prediction } from './prediction.ts';
-import { Interpolator } from './interpolation.ts';
+import { Interpolator, lerpAngleBetween, lerpX, lerpY } from './interpolation.ts';
 import type { Connection } from './connection.ts';
 import type { NetStats } from './netstats.ts';
 import type { RenderEntity } from '../render/types.ts';
+import {
+  createAsteroidSlot,
+  createBulletSlot,
+  createPickupSlot,
+  createShipSlot,
+  place,
+} from '../render/slots.ts';
 
 const GHOST_CONFIRM_MS = 1500;
 
@@ -68,6 +78,15 @@ export class Session {
   ghosts: Ghost[] = []; // власні кулі, показані до підтвердження сервером
   pingTimer: ReturnType<typeof setInterval>;
 
+  // Покадрові пули: об'єкти для малювання створюються один раз і переписуються щокадру
+  #frame: RenderEntity[] = [];
+  #ships = new FrameArena(createShipSlot);
+  #bullets = new FrameArena(createBulletSlot);
+  #asteroids = new FrameArena(createAsteroidSlot);
+  #pickups = new FrameArena(createPickupSlot);
+  #visit = (a: EntityRecord, b: EntityRecord | undefined, t: number): void =>
+    this.#collect(a, b, t);
+
   constructor({ connection, bus, codec, stats, predict = true }: SessionOptions) {
     this.connection = connection;
     this.bus = bus;
@@ -97,8 +116,22 @@ export class Session {
     this.seq = seq(0);
     this.lastTick = serverTick;
     this.prediction = null;
-    this.ghosts = [];
+    this.#dropGhosts(() => true);
     this.interpolator.reset();
+  }
+
+  // Прибирає привидів, для яких keep-предикат каже "видалити", і повертає їхні кулі в пул.
+  // Робить це на місці: без нового масиву на кожен знімок.
+  #dropGhosts(shouldDrop: (ghost: Ghost) => boolean): void {
+    let kept = 0;
+    for (const ghost of this.ghosts) {
+      if (shouldDrop(ghost)) {
+        releaseBullet(ghost.bullet);
+      } else {
+        this.ghosts[kept++] = ghost;
+      }
+    }
+    this.ghosts.length = kept;
   }
 
   #findMyShip(snapshot: Snapshot): ShipRecord | null {
@@ -139,13 +172,13 @@ export class Session {
     }
 
     const now = performance.now();
-    this.ghosts = this.ghosts.filter((ghost) => {
+    this.#dropGhosts((ghost) => {
       if (confirmed.has(ghost.seq16)) {
         ghost.confirmed = true;
-        return true;
+        return false;
       }
-      if (ghost.confirmed) return false; // сервер уже прибрав її: влучила або згасла
-      return now - ghost.born < GHOST_CONFIRM_MS;
+      if (ghost.confirmed) return true; // сервер уже прибрав її: влучила або згасла
+      return now - ghost.born >= GHOST_CONFIRM_MS;
     });
   }
 
@@ -173,7 +206,7 @@ export class Session {
   // один крок симуляції клієнта: інпут -> передбачення -> сервер
   step(controls: Controls): void {
     for (const ghost of this.ghosts) ghost.bullet.update(STEP);
-    this.ghosts = this.ghosts.filter((ghost) => ghost.bullet.alive);
+    this.#dropGhosts((ghost) => !ghost.bullet.alive);
 
     if (!this.prediction) return;
     this.prediction.decay(STEP);
@@ -195,44 +228,62 @@ export class Session {
     this.stats.pending = this.prediction.pending.length;
   }
 
-  // що малювати цього кадру: свій корабель з передбачення, решта з інтерполяції
-  renderEntities(now: number): RenderEntity[] {
-    const out: RenderEntity[] = [];
+  // Що малювати цього кадру: свій корабель з передбачення, решта з інтерполяції.
+  // Масив і об'єкти в ньому належать сесії й переписуються наступним викликом: не зберігати.
+  renderEntities(now: number): readonly RenderEntity[] {
+    this.#frame.length = 0;
+    this.#ships.reset();
+    this.#bullets.reset();
+    this.#asteroids.reset();
+    this.#pickups.reset();
 
-    for (const r of this.interpolator.sample(now)) {
-      const pos = { x: r.x, y: r.y };
-      const common = { pos, prevPos: pos, angle: r.angle, prevAngle: r.angle };
+    this.interpolator.visit(now, this.#visit);
 
-      switch (r.kind) {
-        case Kind.SHIP:
-          if (this.predict && r.id === this.you) break;
-          if (!r.alive) break;
-          out.push({
-            ...common,
-            kind: 'ship',
-            isMe: r.id === this.you,
-            radius: 12,
-            thrusting: r.thrusting,
-          });
-          break;
-        case Kind.BULLET:
-          if (r.owner === this.you && this.#hasGhost(r.seq)) break;
-          out.push({ ...common, kind: 'bullet', radius: 3 });
-          break;
-        case Kind.ASTEROID:
-          out.push({ ...common, kind: 'asteroid', radius: r.radius, homing: r.homing });
-          break;
-        case Kind.PICKUP:
-          out.push({ ...common, kind: 'pickup', radius: 10, effect: effectName(r.effect) });
-          break;
-        default:
-          assertNever(r);
+    if (this.predict && this.prediction?.ship.alive) this.#frame.push(this.prediction.renderShip());
+    for (const ghost of this.ghosts) this.#frame.push(ghost.bullet);
+    return this.#frame;
+  }
+
+  #collect(a: EntityRecord, b: EntityRecord | undefined, t: number): void {
+    const x = b ? lerpX(a.x, b.x, t) : a.x;
+    const y = b ? lerpY(a.y, b.y, t) : a.y;
+    const angle = b ? lerpAngleBetween(a.angle, b.angle, t) : a.angle;
+
+    switch (a.kind) {
+      case Kind.SHIP: {
+        if ((this.predict && a.id === this.you) || !a.alive) return;
+        const slot = this.#ships.next();
+        place(slot, x, y, angle);
+        slot.isMe = a.id === this.you;
+        slot.thrusting = a.thrusting;
+        this.#frame.push(slot);
+        return;
       }
+      case Kind.BULLET: {
+        if (a.owner === this.you && this.#hasGhost(a.seq)) return;
+        const slot = this.#bullets.next();
+        place(slot, x, y, angle);
+        this.#frame.push(slot);
+        return;
+      }
+      case Kind.ASTEROID: {
+        const slot = this.#asteroids.next();
+        place(slot, x, y, angle);
+        slot.radius = a.radius;
+        slot.homing = a.homing;
+        this.#frame.push(slot);
+        return;
+      }
+      case Kind.PICKUP: {
+        const slot = this.#pickups.next();
+        place(slot, x, y, angle);
+        slot.effect = effectName(a.effect);
+        this.#frame.push(slot);
+        return;
+      }
+      default:
+        return assertNever(a);
     }
-
-    if (this.predict && this.prediction?.ship.alive) out.push(this.prediction.renderShip());
-    for (const ghost of this.ghosts) out.push(ghost.bullet);
-    return out;
   }
 
   #hasGhost(seq16: Seq16): boolean {

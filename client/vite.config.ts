@@ -9,4 +9,13 @@ export default defineConfig({
       '/ws': { target: 'ws://localhost:3000', ws: true },
     },
   },
+  build: {
+    rollupOptions: {
+      // zod ставить /* @__PURE__ */ у місцях, які Rollup не вміє читати: це лише шум у виводі
+      onwarn(warning, warn) {
+        if (warning.code === 'INVALID_ANNOTATION') return;
+        warn(warning);
+      },
+    },
+  },
 });

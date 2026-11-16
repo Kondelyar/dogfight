@@ -4,14 +4,18 @@ import type { EntityRecord } from '../messages.ts';
 import type { SimEntity } from './world.ts';
 
 // сутність -> плоский запис знімка. Однаковий для JSON і для бінарного кодека.
-// Порядок ключів важливий: від нього залежить хеш у determinism.ts
+// Один літерал на сутність (без spread): менше тимчасових об'єктів.
+// Порядок ключів важливий: від нього залежить хеш у determinism.ts.
 export function toRecord(e: SimEntity): EntityRecord {
-  const base = { id: e.id, x: e.pos.x, y: e.pos.y, vx: e.vel.x, vy: e.vel.y, angle: e.angle };
-
   switch (e.kind) {
     case 'ship':
       return {
-        ...base,
+        id: e.id,
+        x: e.pos.x,
+        y: e.pos.y,
+        vx: e.vel.x,
+        vy: e.vel.y,
+        angle: e.angle,
         kind: Kind.SHIP,
         alive: e.alive,
         thrusting: e.thrusting,
@@ -21,11 +25,40 @@ export function toRecord(e: SimEntity): EntityRecord {
         rapid: e.rapidSteps,
       };
     case 'bullet':
-      return { ...base, kind: Kind.BULLET, owner: e.owner, seq: toSeq16(e.seq) };
+      return {
+        id: e.id,
+        x: e.pos.x,
+        y: e.pos.y,
+        vx: e.vel.x,
+        vy: e.vel.y,
+        angle: e.angle,
+        kind: Kind.BULLET,
+        owner: e.owner,
+        seq: toSeq16(e.seq),
+      };
     case 'asteroid':
-      return { ...base, kind: Kind.ASTEROID, radius: Math.round(e.radius), homing: e.homing };
+      return {
+        id: e.id,
+        x: e.pos.x,
+        y: e.pos.y,
+        vx: e.vel.x,
+        vy: e.vel.y,
+        angle: e.angle,
+        kind: Kind.ASTEROID,
+        radius: Math.round(e.radius),
+        homing: e.homing,
+      };
     case 'pickup':
-      return { ...base, kind: Kind.PICKUP, effect: Effect[e.effect] };
+      return {
+        id: e.id,
+        x: e.pos.x,
+        y: e.pos.y,
+        vx: e.vel.x,
+        vy: e.vel.y,
+        angle: e.angle,
+        kind: Kind.PICKUP,
+        effect: Effect[e.effect],
+      };
     default:
       return assertNever(e);
   }

@@ -3,7 +3,7 @@ import { createLoop } from './loop.ts';
 import { createInput } from './input.ts';
 import { createAudio } from './audio.ts';
 import { createHud } from './hud.ts';
-import { createExplosion, updateExplosions, makeStars, type Explosion } from './effects.ts';
+import { Explosions, makeStars } from './effects.ts';
 import {
   fetchJson,
   withRetry,
@@ -19,6 +19,8 @@ import { Session } from './net/session.ts';
 import { mountChat } from './net/chatView.ts';
 import { Lobby } from './lobby/lobby.ts';
 import { mountLobbyView } from './lobby/lobbyView.ts';
+import { startBots } from './bots/launch.ts';
+import { exposeTestHook } from './e2e.ts';
 import { setupCanvas } from './render/canvas.ts';
 import { drawLoading, type LoadingState } from './render/loading.ts';
 import { drawNetgraph } from './render/netgraph.ts';
@@ -121,10 +123,10 @@ function showLobby(assets: LoadedAssets, failed: LoadFailure[]): void {
 }
 
 // ?lag=100&jitter=30&drop=0.02 передаємо серверу: емулятор мережі вмикається з першого пакета
-function wsUrl(): string {
+function wsUrl(withLag = true): string {
   const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
   const query = new URLSearchParams();
-  for (const key of ['lag', 'jitter', 'drop']) {
+  for (const key of withLag ? ['lag', 'jitter', 'drop'] : []) {
     const value = params.get(key);
     if (value !== null) query.set(key, value);
   }
@@ -151,8 +153,8 @@ function startGame(assets: LoadedAssets, room: RoomInfo, name: string): void {
   const bus = new Emitter<WorldEvents>();
   audio.attach(bus);
   const hud = createHud(bus);
-  let explosions: Explosion[] = [];
-  bus.on('exploded', ({ x, y }) => explosions.push(createExplosion(x, y)));
+  const explosions = new Explosions();
+  bus.on('exploded', ({ x, y }) => explosions.spawn(x, y));
 
   const connection = new Connection(wsUrl());
   const stats = new NetStats(connection);
@@ -169,9 +171,22 @@ function startGame(assets: LoadedAssets, room: RoomInfo, name: string): void {
     predict: params.get('predict') !== '0',
   });
 
+  if (params.has('e2e')) exposeTestHook(session);
+
   mountChat(chatRoot, connection);
   connection.on('open', () => connection.send({ type: 'join', room: room.id, name, codec }));
   connection.connect();
+
+  // ?bots=8&botMode=worker|main - боти в тій самій кімнаті (для навантаження і вимірів)
+  const botCount = Number(params.get('bots') ?? 0);
+  if (botCount > 0) {
+    startBots(params.get('botMode') === 'main' ? 'main' : 'worker', {
+      wsUrl: wsUrl(false),
+      roomId: room.id,
+      count: botCount,
+      seed: 777,
+    });
+  }
 
   // [ ] - затримка інтерполяції, L - затримка мережі, K - втрати (змінюється на льоту)
   window.addEventListener('keydown', (e) => {
@@ -216,7 +231,7 @@ function startGame(assets: LoadedAssets, room: RoomInfo, name: string): void {
 
   function render(alpha: number): void {
     const now = performance.now();
-    explosions = updateExplosions(explosions, (now - lastRender) / 1000);
+    explosions.update((now - lastRender) / 1000);
     lastRender = now;
     if (!stars && session.you !== null) stars = makeStars(session.seed);
 
@@ -236,7 +251,7 @@ function startGame(assets: LoadedAssets, room: RoomInfo, name: string): void {
 
     drawStarfield(ctx, ARENA.width, ARENA.height, stars ?? lobbyStars);
     for (const e of session.renderEntities(now)) drawEntity(ctx, e, alpha, sprites);
-    for (const e of explosions) drawExplosion(ctx, e);
+    for (const e of explosions.active) drawExplosion(ctx, e);
     hud.draw(ctx);
     ctx.restore();
 

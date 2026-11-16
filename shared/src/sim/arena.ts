@@ -1,11 +1,15 @@
 import { Vector2 } from './vector.ts';
 import { ARENA } from './constants.ts';
 
+// одна координата: усередині [0, size) лишається як є, інакше загортається
+export function wrapCoord(v: number, size: number): number {
+  return v < 0 || v >= size ? ((v % size) + size) % size : v;
+}
+
 // якщо позиція всередині арени, повертає той самий об'єкт
 export function wrapPosition(pos: Vector2): Vector2 {
-  let { x, y } = pos;
-  if (x < 0 || x >= ARENA.width) x = ((x % ARENA.width) + ARENA.width) % ARENA.width;
-  if (y < 0 || y >= ARENA.height) y = ((y % ARENA.height) + ARENA.height) % ARENA.height;
+  const x = wrapCoord(pos.x, ARENA.width);
+  const y = wrapCoord(pos.y, ARENA.height);
   return x === pos.x && y === pos.y ? pos : new Vector2(x, y);
 }
 

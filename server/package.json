@@ -6,8 +6,10 @@
   "scripts": {
     "dev": "node --env-file-if-exists=.env --watch src/index.ts",
     "start": "node --env-file-if-exists=.env src/index.ts",
-    "test": "node --test \"test/**/*.test.ts\"",
-    "typecheck": "tsc -p tsconfig.json"
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json",
+    "load": "node scripts/load.ts",
+    "bots": "node scripts/bots.ts"
   },
   "engines": {
     "node": ">=22.18"

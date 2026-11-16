@@ -22,6 +22,12 @@ const avg = (list: number[]): number =>
   list.length ? list.reduce((s, v) => s + v, 0) / list.length : 0;
 const round = (n: number): number => Math.round(n * 100) / 100;
 
+function percentile(list: number[], p: number): number {
+  if (list.length === 0) return 0;
+  const sorted = [...list].sort((a, b) => a - b);
+  return sorted[Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1)] ?? 0;
+}
+
 interface ClientState {
   player: Player;
   ship: Ship;
@@ -35,7 +41,7 @@ export interface MatchStats {
   room: string;
   players: number;
   tick: number;
-  tickMs: { avg: number; max: number };
+  tickMs: { avg: number; p50: number; p95: number; p99: number; max: number };
   intervalMs: { avg: number; jitter: number };
   overruns: number;
 }
@@ -160,6 +166,11 @@ export class Match {
     if (list.length > SAMPLES) list.shift();
   }
 
+  // один тік без таймера: для тестів і бенчмарків
+  tickOnce(): void {
+    this.#tick();
+  }
+
   #tick(): void {
     for (const client of this.#clients.values()) {
       // довгостроково не більше одного інпуту на тік: інакше можна летіти швидше за правила
@@ -177,9 +188,20 @@ export class Match {
 
     const entities = this.#world.records();
     const events = this.#events.splice(0);
+    const tick = this.#world.tick;
+
+    // Знімок однаковий для всіх, відрізняється лише ack. Бінарний кадр кодуємо один раз за тік,
+    // а кожному клієнту віддаємо копію з його ack (раніше кодували заново для кожного клієнта).
+    let shared: ArrayBuffer | null = null;
     for (const client of this.#clients.values()) {
-      const snapshot = { tick: this.#world.tick, ack: client.lastSeq, entities, events };
-      client.player.sendState(codecs[client.player.codec].encodeSnapshot(snapshot));
+      if (client.player.codec === 'binary') {
+        shared ??= codecs.binary.encodeSnapshot({ tick, ack: seq(0), entities, events });
+        client.player.sendState(codecs.binary.withAck(shared, client.lastSeq));
+      } else {
+        client.player.sendState(
+          codecs.json.encodeSnapshot({ tick, ack: client.lastSeq, entities, events }),
+        );
+      }
     }
   }
 
@@ -189,7 +211,13 @@ export class Match {
       room: this.#room.id,
       players: this.#clients.size,
       tick: this.#world.tick,
-      tickMs: { avg: round(avg(this.#durations)), max: round(Math.max(0, ...this.#durations)) },
+      tickMs: {
+        avg: round(avg(this.#durations)),
+        p50: round(percentile(this.#durations, 50)),
+        p95: round(percentile(this.#durations, 95)),
+        p99: round(percentile(this.#durations, 99)),
+        max: round(Math.max(0, ...this.#durations)),
+      },
       intervalMs: { avg: round(avg(this.#intervals)), jitter: round(jitter) },
       overruns: this.#overruns,
     };

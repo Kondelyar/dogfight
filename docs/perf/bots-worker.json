@@ -1,0 +1,107 @@
+{
+  "label": "bots-worker",
+  "url": "http://localhost:3202",
+  "seconds": 30,
+  "bots": 0,
+  "query": "?bots=8&botMode=worker",
+  "frames": 5438,
+  "frameWorkMs": {
+    "count": 5438,
+    "p50": 0.4,
+    "p95": 0.5,
+    "p99": 0.7,
+    "max": 2.6,
+    "mean": 0.37
+  },
+  "frameIntervalMs": {
+    "count": 5438,
+    "p50": 5.6,
+    "p95": 5.7,
+    "p99": 6,
+    "max": 14.4,
+    "mean": 5.56
+  },
+  "longFrames": 0,
+  "gc": {
+    "pauses": {
+      "count": 98,
+      "p50": 0.43,
+      "p95": 1.97,
+      "p99": 4.93,
+      "max": 4.93,
+      "mean": 0.83
+    },
+    "over5ms": 0,
+    "over10ms": 0,
+    "totalMs": 80.99,
+    "byName": {
+      "MinorGC": 33,
+      "V8.GCScavenger": 33,
+      "MajorGC": 17,
+      "V8.GCFinalizeMC": 15
+    }
+  },
+  "sampledAllocMb": 41.63,
+  "topAllocators": [
+    {
+      "fn": "readEntity index-CLGZEoRI.js:6718",
+      "mb": 6.69,
+      "percent": 16.1
+    },
+    {
+      "fn": "collect_fn index-CLGZEoRI.js:7742",
+      "mb": 3.95,
+      "percent": 9.5
+    },
+    {
+      "fn": "render index-CLGZEoRI.js:8436",
+      "mb": 3.2,
+      "percent": 7.7
+    },
+    {
+      "fn": "update index-CLGZEoRI.js:7037",
+      "mb": 3.05,
+      "percent": 7.3
+    },
+    {
+      "fn": "visit index-CLGZEoRI.js:7529",
+      "mb": 3.04,
+      "percent": 7.3
+    },
+    {
+      "fn": "push index-CLGZEoRI.js:7509",
+      "mb": 2.49,
+      "percent": 6
+    },
+    {
+      "fn": "drawStarfield index-CLGZEoRI.js:8246",
+      "mb": 2.15,
+      "percent": 5.2
+    },
+    {
+      "fn": "drawHud index-CLGZEoRI.js:8255",
+      "mb": 1.94,
+      "percent": 4.7
+    },
+    {
+      "fn": "drawExplosion index-CLGZEoRI.js:8237",
+      "mb": 1.9,
+      "percent": 4.6
+    },
+    {
+      "fn": "every :0",
+      "mb": 1.15,
+      "percent": 2.8
+    },
+    {
+      "fn": "lerpX index-CLGZEoRI.js:7489",
+      "mb": 0.94,
+      "percent": 2.3
+    },
+    {
+      "fn": "lerpY index-CLGZEoRI.js:7490",
+      "mb": 0.91,
+      "percent": 2.2
+    }
+  ]
+}
